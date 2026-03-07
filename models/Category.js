@@ -30,6 +30,11 @@ const categorySchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Category',
         default: null
+    },
+    brandId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company',
+        default: null
     }
 }, { timestamps: true });
 

@@ -10,6 +10,20 @@ const getAllCategories = async (req, res) => {
             query.parent = parentId === 'null' ? null : parentId;
         }
 
+        // Scoping for Brand Owner: show global categories OR their own brand categories
+        if (req.user && (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner')) {
+            query.$or = [
+                { brandId: null },
+                { brandId: { $in: req.ownedBrandIds || [] } }
+            ];
+        } else if (!req.user || req.user.role !== 'Super Admin') {
+            // For general public, only show global categories (unless they are browsing a brand)
+            // For now, let's just keep it simple: Super Admin sees all, Public sees all, Brand Owner sees theirs + global.
+            // Actually, if Public sees all, then Brand Owner seeing theirs + global is redundant if theirs is already a subset of all.
+            // But we want to isolate brand categories from other brands.
+            query.brandId = null; 
+        }
+
         const categories = await Category.find(query).sort({ createdAt: -1 });
         res.json(categories);
     } catch (err) {
@@ -22,11 +36,23 @@ const getAllCategories = async (req, res) => {
 // @route   POST /api/categories
 const createCategory = async (req, res) => {
     try {
-        const { name, slug, image, status, parent } = req.body;
+        const { name, slug, image, status, parent, brandId } = req.body;
 
         let category = await Category.findOne({ slug });
         if (category) {
             return res.status(400).json({ msg: 'Category with this slug already exists' });
+        }
+
+        // Authorization check for Brand Owner
+        let finalBrandId = brandId || null;
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!brandId) {
+                return res.status(400).json({ msg: 'Brand ID is required for brand-specific categories' });
+            }
+            if (!req.ownedBrandIds.map(id => id.toString()).includes(brandId)) {
+                return res.status(403).json({ msg: 'Not authorized to create category for this brand' });
+            }
+            finalBrandId = brandId;
         }
 
         category = new Category({
@@ -34,7 +60,8 @@ const createCategory = async (req, res) => {
             slug,
             image,
             status,
-            parent: parent || null
+            parent: parent || null,
+            brandId: finalBrandId
         });
 
         await category.save();
@@ -65,7 +92,13 @@ const updateCategory = async (req, res) => {
         let category = await Category.findById(categoryId);
         if (!category) return res.status(404).json({ msg: 'Category not found' });
 
-        const oldParent = category.parent;
+        // Authorization check for Brand Owner
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!category.brandId || !req.ownedBrandIds.map(id => id.toString()).includes(category.brandId.toString())) {
+                return res.status(403).json({ msg: 'Not authorized to update this category' });
+            }
+        }
+          const oldParent = category.parent;
 
         const categoryFields = {};
         if (name) categoryFields.name = name;
@@ -105,7 +138,13 @@ const deleteCategory = async (req, res) => {
         const category = await Category.findById(req.params.id);
         if (!category) return res.status(404).json({ msg: 'Category not found' });
 
-        // Block deletion if subcategories exist
+        // Authorization check for Brand Owner
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!category.brandId || !req.ownedBrandIds.map(id => id.toString()).includes(category.brandId.toString())) {
+                return res.status(403).json({ msg: 'Not authorized to delete this category' });
+            }
+        }
+          // Block deletion if subcategories exist
         if (category.subCount > 0) {
             return res.status(400).json({ msg: 'Cannot delete category with subcategories' });
         }

@@ -12,6 +12,11 @@ exports.getServices = async (req, res) => {
         if (status) query.status = status;
         if (isFeatured === 'true') query.featured = true;
 
+        // Scoping for Brand Owner
+        if (req.user && (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner')) {
+            query.listingId = { $in: req.ownedBrandIds || [] };
+        }
+
         let dbQuery = Service.find(query)
             .populate('listingId', 'name slug')
             .populate('categoryId', 'name')
@@ -57,6 +62,18 @@ exports.createService = async (req, res) => {
         
         if (req.body.subCategoryId === '') delete req.body.subCategoryId;
         
+        // Auto-generate slug if not provided
+        if (req.body.name && !req.body.slug) {
+            req.body.slug = slugify(req.body.name, { lower: true, strict: true });
+        }
+        
+        // Validation for Brand Owner: must belong to their brand
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!req.ownedBrandIds.map(id => id.toString()).includes(req.body.listingId)) {
+                return res.status(403).json({ success: false, error: 'Not authorized to add service to this brand' });
+            }
+        }
+
         const service = await Service.create(req.body);
 
         res.status(201).json({
@@ -84,14 +101,26 @@ exports.updateService = async (req, res) => {
             req.body.slug = slugify(req.body.name, { lower: true, strict: true });
         }
 
-        const service = await Service.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
-            runValidators: true
-        });
-
+        let service = await Service.findById(req.params.id);
         if (!service) {
             return res.status(404).json({ success: false, error: 'Service not found' });
         }
+
+        // Authorization check for Brand Owner
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!req.ownedBrandIds.map(id => id.toString()).includes(service.listingId.toString())) {
+                return res.status(403).json({ success: false, error: 'Not authorized to update this service' });
+            }
+            // Also prevent changing listingId to a brand they don't own
+            if (req.body.listingId && !req.ownedBrandIds.map(id => id.toString()).includes(req.body.listingId)) {
+                return res.status(403).json({ success: false, error: 'Not authorized to move service to this brand' });
+            }
+        }
+
+        service = await Service.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true
+        });
 
         res.status(200).json({ success: true, data: service });
     } catch (error) {
@@ -106,11 +135,17 @@ exports.updateService = async (req, res) => {
 // Delete service
 exports.deleteService = async (req, res) => {
     try {
-        const service = await Service.findByIdAndDelete(req.params.id);
-
+        let service = await Service.findById(req.params.id);
         if (!service) {
             return res.status(404).json({ success: false, error: 'Service not found' });
         }
+
+        // Authorization check for Brand Owner
+        if ((req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') && !req.ownedBrandIds.map(id => id.toString()).includes(service.listingId.toString())) {
+            return res.status(403).json({ success: false, error: 'Not authorized to delete this service' });
+        }
+
+        await Service.findByIdAndDelete(req.params.id);
 
         res.status(200).json({ success: true, data: {} });
     } catch (error) {

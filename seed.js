@@ -3,8 +3,9 @@ const bcrypt = require('bcryptjs');
 const Category = require('./models/Category');
 const Company = require('./models/Company');
 const User = require('./models/User');
+require('dotenv').config();
 
-const MONGO_URI = 'mongodb://127.0.0.1:27017/justdial';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/justdial';
 
 const categories = [
     { name: 'Restaurants', slug: 'restaurants', status: 'Active', subCount: 12 },

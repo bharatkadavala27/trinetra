@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const Company = require('../models/Company');
 
 // Protect routes
 exports.protect = async (req, res, next) => {
@@ -16,13 +18,31 @@ exports.protect = async (req, res, next) => {
     }
 
     try {
-        // Verify token (temporarily skipping DB lookup to keep it simple, just decode payload)
+        // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-        req.user = decoded;
+        
+        // Find user and attach to request
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(401).json({ msg: 'User no longer exists' });
+        }
+        
+        req.user = user;
         next();
     } catch (err) {
         return res.status(401).json({ msg: 'Not authorized to access this route' });
     }
+};
+
+// Middleware to find and attach all brands (companies) owned by the current user
+exports.attachOwnedBrands = async (req, res, next) => {
+    if (!req.user) return next();
+
+    // Super Admin sees everything anyway, but for Brand Owners we need specific IDs
+    // Find all companies where this user is the owner
+    const companies = await Company.find({ owner: req.user._id });
+    req.ownedBrandIds = companies.map(c => c._id);
+    next();
 };
 
 // Grant access to specific roles

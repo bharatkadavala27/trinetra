@@ -1,4 +1,6 @@
 const Company = require('../models/Company');
+const User = require('../models/User');
+const Category = require('../models/Category');
 
 // @desc    Get all companies
 // @route   GET /api/companies
@@ -14,11 +16,22 @@ const getAllCompanies = async (req, res) => {
             query.isFeatured = (isFeatured === 'true' || featured === 'true');
         }
 
+        // scoping for Brand Owner
+        if (req.user) {
+            const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+            if (isOwner) {
+                query.owner = req.user._id;
+            }
+        }
+
         // 2. Fetch base companies matching location/featured filters
         let companies = await Company.find(query)
+            .populate('country_id', 'name slug')
             .populate('city_id', 'name slug')
             .populate('state_id', 'name slug')
             .populate('area_id', 'name slug')
+            .populate('owner', 'name email role')
+            .sort({ createdAt: -1 })
             .lean(); 
 
         const Product = require('../models/Product');
@@ -103,12 +116,34 @@ const getAllCompanies = async (req, res) => {
 // @route   POST /api/companies
 const createCompany = async (req, res) => {
     try {
-        const company = new Company(req.body);
+        const body = { ...req.body };
+        // Sanitize fields - convert empty strings to null to avoid CastError
+        ['country_id', 'state_id', 'city_id', 'area_id', 'owner', 'latitude', 'longitude'].forEach(field => {
+            if (body[field] === '') body[field] = null;
+        });
+
+        // For Brand Owner, force the owner to be themselves
+        if (req.user) {
+            const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+            if (isOwner) {
+                req.body.owner = req.user._id;
+            }
+        }
+
+        const company = new Company(body);
         await company.save();
-        res.status(201).json(company);
+
+        const populatedCompany = await Company.findById(company._id)
+            .populate('city_id', 'name slug')
+            .populate('state_id', 'name slug')
+            .populate('area_id', 'name slug')
+            .populate('owner', 'name email')
+            .lean();
+
+        res.status(201).json(populatedCompany);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ msg: 'Server Error' });
+        console.error('Create Company Error:', err.message);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 };
 
@@ -119,17 +154,39 @@ const updateCompany = async (req, res) => {
         let company = await Company.findById(req.params.id);
         if (!company) return res.status(404).json({ msg: 'Company not found' });
 
+        // Authorization check for Brand Owner
+        const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+        if (isOwner && company.owner.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ msg: 'Not authorized to update this company' });
+        }
+
+        const body = { ...req.body };
+        // Sanitize fields
+        ['country_id', 'state_id', 'city_id', 'area_id', 'owner', 'latitude', 'longitude'].forEach(field => {
+            if (body[field] === '') body[field] = null;
+        });
+
+        // For Brand Owner, don't allow changing the owner
+        if (req.user.role === 'Brand Owner') {
+            delete body.owner;
+        }
+
         company = await Company.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body },
+            { $set: body },
             { new: true }
-        );
+        )
+        .populate('city_id', 'name slug')
+        .populate('state_id', 'name slug')
+        .populate('area_id', 'name slug')
+        .populate('owner', 'name email role')
+        .lean();
 
         res.json(company);
     } catch (err) {
-        console.error(err.message);
+        console.error('Update Company Error:', err.message);
         if (err.kind === 'ObjectId') return res.status(404).json({ msg: 'Company not found' });
-        res.status(500).json({ msg: 'Server Error' });
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 };
 
@@ -139,6 +196,12 @@ const deleteCompany = async (req, res) => {
     try {
         const company = await Company.findById(req.params.id);
         if (!company) return res.status(404).json({ msg: 'Company not found' });
+
+        // Authorization check for Brand Owner
+        const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+        if (isOwner && company.owner.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ msg: 'Not authorized to delete this company' });
+        }
 
         await Company.findByIdAndDelete(req.params.id);
         res.json({ msg: 'Company removed' });

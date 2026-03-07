@@ -12,6 +12,11 @@ exports.getProducts = async (req, res) => {
         if (status) query.status = status;
         if (isFeatured === 'true') query.featured = true;
 
+        // Scoping for Brand Owner
+        if (req.user && (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner')) {
+            query.listingId = { $in: req.ownedBrandIds || [] };
+        }
+
         let dbQuery = Product.find(query)
             .populate('listingId', 'name slug')
             .populate('categoryId', 'name')
@@ -60,6 +65,18 @@ exports.createProduct = async (req, res) => {
         if (req.body.subCategoryId === '') delete req.body.subCategoryId;
         if (req.body.brandId === '') delete req.body.brandId;
         
+        // Auto-generate slug if not provided
+        if (req.body.name && !req.body.slug) {
+            req.body.slug = slugify(req.body.name, { lower: true, strict: true });
+        }
+
+        // Validation for Brand Owner: must belong to their brand
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!req.ownedBrandIds.map(id => id.toString()).includes(req.body.listingId)) {
+                return res.status(403).json({ success: false, error: 'Not authorized to add product to this brand' });
+            }
+        }
+        
         const product = await Product.create(req.body);
 
         res.status(201).json({
@@ -89,14 +106,26 @@ exports.updateProduct = async (req, res) => {
             req.body.slug = slugify(req.body.name, { lower: true, strict: true });
         }
 
-        const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
-            runValidators: true
-        });
-
+        let product = await Product.findById(req.params.id);
         if (!product) {
             return res.status(404).json({ success: false, error: 'Product not found' });
         }
+
+        // Authorization check for Brand Owner
+        if (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') {
+            if (!req.ownedBrandIds.map(id => id.toString()).includes(product.listingId.toString())) {
+                return res.status(403).json({ success: false, error: 'Not authorized to update this product' });
+            }
+            // Also prevent changing listingId to a brand they don't own
+            if (req.body.listingId && !req.ownedBrandIds.map(id => id.toString()).includes(req.body.listingId)) {
+                return res.status(403).json({ success: false, error: 'Not authorized to move product to this brand' });
+            }
+        }
+
+        product = await Product.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true
+        });
 
         res.status(200).json({ success: true, data: product });
     } catch (error) {
@@ -111,11 +140,17 @@ exports.updateProduct = async (req, res) => {
 // Delete product
 exports.deleteProduct = async (req, res) => {
     try {
-        const product = await Product.findByIdAndDelete(req.params.id);
-
+        let product = await Product.findById(req.params.id);
         if (!product) {
             return res.status(404).json({ success: false, error: 'Product not found' });
         }
+
+        // Authorization check for Brand Owner
+        if ((req.user.role === 'Brand Owner' || req.user.role === 'Company Owner') && !req.ownedBrandIds.map(id => id.toString()).includes(product.listingId.toString())) {
+            return res.status(403).json({ success: false, error: 'Not authorized to delete this product' });
+        }
+
+        await Product.findByIdAndDelete(req.params.id);
 
         res.status(200).json({ success: true, data: {} });
     } catch (error) {

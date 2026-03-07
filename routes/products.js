@@ -8,16 +8,16 @@ const {
     deleteProduct
 } = require('../controllers/productController');
 
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { protect, authorize, attachOwnedBrands } = require('../middleware/authMiddleware');
 
 // Public routes
 router.route('/').get(getProducts);
 router.route('/:id').get(getProduct);
 
-// Protected routes (Admin / Listing Owner)
-// For MVP, we restrict to Super Admin. In the future, this can be expanded to 'Listing Owner' or 'Business'.
+// Protected routes (Admin / Brand Owner)
 router.use(protect);
-router.use(authorize('Super Admin'));
+router.use(authorize('Super Admin', 'Brand Owner', 'Company Owner'));
+router.use(attachOwnedBrands);
 
 router.route('/').post(createProduct);
 router.route('/:id')
