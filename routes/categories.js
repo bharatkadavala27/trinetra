@@ -4,7 +4,16 @@ const { getAllCategories, createCategory, updateCategory, deleteCategory, getCat
 const { protect, authorize, attachOwnedBrands } = require('../middleware/authMiddleware');
 
 // Public routes
-router.get('/', protect, attachOwnedBrands, getAllCategories);
+router.get('/', (req, res, next) => {
+    const { protect, attachOwnedBrands } = require('../middleware/authMiddleware');
+    if (req.headers.authorization) {
+        return protect(req, res, (err) => {
+            if (err) return next(); // Ignore auth errors for public route
+            attachOwnedBrands(req, res, next);
+        });
+    }
+    next();
+}, getAllCategories);
 router.get('/slug/:slug', getCategoryBySlug);
 
 // Protected routes (Admin / Brand Owner)

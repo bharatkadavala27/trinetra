@@ -8,8 +8,11 @@ const router = express.Router();
 router.get('/', protect, attachOwnedBrands, async (req, res) => {
     try {
         let query = {};
-        if (req.user.role === 'Brand Owner') {
-            query.brandId = { $in: req.ownedBrandIds };
+        const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+        const forceOwned = req.query.owned === 'true';
+
+        if (forceOwned || isOwner) {
+            query.brandId = { $in: req.ownedBrandIds || [] };
         } else if (req.query.brandId) {
             query.brandId = req.query.brandId;
         }

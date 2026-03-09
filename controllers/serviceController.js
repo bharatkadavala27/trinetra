@@ -12,9 +12,14 @@ exports.getServices = async (req, res) => {
         if (status) query.status = status;
         if (isFeatured === 'true') query.featured = true;
 
-        // Scoping for Brand Owner
-        if (req.user && (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner')) {
-            query.listingId = { $in: req.ownedBrandIds || [] };
+        // Scoping for Brand Owner / Dashboard
+        if (req.user) {
+            const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+            const forceOwned = req.query.owned === 'true';
+
+            if (forceOwned || isOwner) {
+                query.listingId = { $in: req.ownedBrandIds || [] };
+            }
         }
 
         let dbQuery = Service.find(query)

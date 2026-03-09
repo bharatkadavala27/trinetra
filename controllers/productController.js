@@ -12,9 +12,14 @@ exports.getProducts = async (req, res) => {
         if (status) query.status = status;
         if (isFeatured === 'true') query.featured = true;
 
-        // Scoping for Brand Owner
-        if (req.user && (req.user.role === 'Brand Owner' || req.user.role === 'Company Owner')) {
-            query.listingId = { $in: req.ownedBrandIds || [] };
+        // Scoping for Brand Owner / Dashboard
+        if (req.user) {
+            const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
+            const forceOwned = req.query.owned === 'true';
+
+            if (forceOwned || isOwner) {
+                query.listingId = { $in: req.ownedBrandIds || [] };
+            }
         }
 
         let dbQuery = Product.find(query)
@@ -51,6 +56,40 @@ exports.getProduct = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Product not found' });
         }
         res.status(200).json({ success: true, data: product });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// @desc    Get product by slug
+// @route   GET /api/products/slug/:slug
+exports.getProductBySlug = async (req, res) => {
+    try {
+        const product = await Product.findOne({ slug: req.params.slug, status: 'Active' })
+            .populate('listingId', 'name slug phone email image address city_id state_id area_id')
+            .populate('categoryId', 'name')
+            .populate('subCategoryId', 'name')
+            .populate('brandId', 'name');
+
+        if (!product) {
+            return res.status(404).json({ success: false, error: 'Product not found' });
+        }
+
+        // Get similar products from the same category
+        const similarProducts = await Product.find({
+            categoryId: product.categoryId._id,
+            _id: { $ne: product._id },
+            status: 'Active'
+        })
+        .limit(6)
+        .populate('listingId', 'name slug')
+        .select('name slug price images description');
+
+        res.status(200).json({ 
+            success: true, 
+            data: product,
+            similarProducts: similarProducts
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

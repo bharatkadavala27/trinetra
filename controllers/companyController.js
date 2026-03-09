@@ -12,14 +12,18 @@ const getAllCompanies = async (req, res) => {
         // 1. Initial Location / Featured filters
         if (city) query.city_id = city;
         if (area) query.area_id = area;
+        if (categoryId) query.category_id = categoryId;
         if (isFeatured !== undefined || featured !== undefined) {
             query.isFeatured = (isFeatured === 'true' || featured === 'true');
         }
 
-        // scoping for Brand Owner
+        // scoping for Brand Owner / Dashboard
         if (req.user) {
             const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
-            if (isOwner) {
+            const forceOwned = req.query.owned === 'true';
+
+            // If forced (Dashboard) or if it's a Brand Owner not on a public search
+            if (forceOwned || (isOwner && !q && !city && !area && !categoryId)) {
                 query.owner = req.user._id;
             }
         }
@@ -80,13 +84,17 @@ const getAllCompanies = async (req, res) => {
         // Filter by Category/SubCategory ID vs String (Support both Legacy and New logic)
         if (categoryId || category) {
             companies = companies.filter(c => {
-                // If the company's explicit legacy category matches the string
+                // 1. Match by specific category ID (Newly added)
+                const matchesCategoryId = categoryId && c.category_id && c.category_id.toString() === categoryId;
+                
+                // 2. Match by explicit legacy category string
                 const matchesLegacyString = category && c.category === category;
-                // Or if it has any product/service matching the category ObjectId
+                
+                // 3. Match if it has any product/service matching the category ObjectId
                 const hasMatchingProduct = c.products.length > 0;
                 const hasMatchingService = c.services.length > 0;
                 
-                return matchesLegacyString || hasMatchingProduct || hasMatchingService;
+                return matchesCategoryId || matchesLegacyString || hasMatchingProduct || hasMatchingService;
             });
         }
 
@@ -122,11 +130,13 @@ const createCompany = async (req, res) => {
             if (body[field] === '') body[field] = null;
         });
 
-        // For Brand Owner, force the owner to be themselves
+        // For logged-in users, assign them as owner and ensure they are at least a Brand Owner
         if (req.user) {
-            const isOwner = req.user.role === 'Brand Owner' || req.user.role === 'Company Owner';
-            if (isOwner) {
-                req.body.owner = req.user._id;
+            body.owner = req.user._id;
+            
+            // If they are a regular 'User', upgrade them so they can manage their brands
+            if (req.user.role === 'User') {
+                await User.findByIdAndUpdate(req.user._id, { role: 'Brand Owner' });
             }
         }
 
@@ -212,4 +222,75 @@ const deleteCompany = async (req, res) => {
     }
 };
 
-module.exports = { getAllCompanies, createCompany, updateCompany, deleteCompany };
+// @desc    Get company by slug
+// @route   GET /api/companies/slug/:slug
+const getCompanyBySlug = async (req, res) => {
+    try {
+        const company = await Company.findOne({ slug: req.params.slug })
+            .populate('country_id', 'name slug')
+            .populate('city_id', 'name slug')
+            .populate('state_id', 'name slug')
+            .populate('area_id', 'name slug')
+            .populate('owner', 'name email role');
+
+        if (!company) {
+            return res.status(404).json({ msg: 'Company not found' });
+        }
+
+        const Product = require('../models/Product');
+        const Service = require('../models/Service');
+
+        const [products, services] = await Promise.all([
+            Product.find({ listingId: company._id, status: 'Active' }).lean(),
+            Service.find({ listingId: company._id, status: 'Active' }).lean()
+        ]);
+
+        const companyObj = company.toObject();
+        companyObj.products = products;
+        companyObj.services = services;
+
+        res.json(companyObj);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Claim a company
+// @route   POST /api/companies/:id/claim
+const claimCompany = async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+
+        if (!company) {
+            return res.status(404).json({ msg: 'Company not found' });
+        }
+
+        if (company.claimed) {
+            return res.status(400).json({ msg: 'This company is already claimed' });
+        }
+
+        // Assign current user as owner
+        company.owner = req.user._id;
+        company.claimed = true;
+        // Optional: Keep verified false until admin reviews the claim
+        // company.verified = false; 
+
+        await company.save();
+
+        const populatedCompany = await Company.findById(company._id)
+            .populate('owner', 'name email role')
+            .lean();
+
+        res.json({
+            success: true,
+            msg: 'Company claimed successfully!',
+            company: populatedCompany
+        });
+    } catch (err) {
+        console.error('Claim Company Error:', err.message);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+};
+
+module.exports = { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany };
