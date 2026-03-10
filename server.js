@@ -46,7 +46,7 @@ app.use('/api/services', require('./routes/services'));
 app.use('/api/brand-locations', require('./routes/brandLocations'));
 app.use('/api/claims', require('./routes/claimRoutes'));
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/justdial';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/trinetra';
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(MONGO_URI)
