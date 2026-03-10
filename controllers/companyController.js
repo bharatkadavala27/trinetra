@@ -241,8 +241,15 @@ const getCompanyBySlug = async (req, res) => {
         const Service = require('../models/Service');
 
         const [products, services] = await Promise.all([
-            Product.find({ listingId: company._id, status: 'Active' }).lean(),
-            Service.find({ listingId: company._id, status: 'Active' }).lean()
+            Product.find({ listingId: company._id, status: 'Active' })
+                .populate('categoryId', 'name slug')
+                .populate('subCategoryId', 'name slug')
+                .populate('brandId', 'name slug')
+                .lean(),
+            Service.find({ listingId: company._id, status: 'Active' })
+                .populate('categoryId', 'name slug')
+                .populate('subCategoryId', 'name slug')
+                .lean()
         ]);
 
         const companyObj = company.toObject();
