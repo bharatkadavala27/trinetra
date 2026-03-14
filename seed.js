@@ -22,6 +22,8 @@ const categories = [
 
 const users = [
     { name: 'Super Admin', email: 'admin@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
+    { name: 'Super Admin 2', email: 'adminfuerte@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
+    { name: 'Trinetra Admin', email: 'admintrinerta@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
     { name: 'Rahul Sharma', email: 'rahul@example.com', role: 'Company Owner', status: 'Active', companiesOwned: 3 },
     { name: 'Priya Patel', email: 'priya@example.com', role: 'Company Owner', status: 'Active', companiesOwned: 2 },
     { name: 'Amit Verma', email: 'amit@example.com', role: 'User', status: 'Active', companiesOwned: 0 },
@@ -32,6 +34,7 @@ const users = [
 const companies = [
     { 
         name: 'Taj Hotel Mumbai', 
+        slug: 'taj-hotel-mumbai',
         category: 'Hotels', 
         location: 'Mumbai, Maharashtra', 
         description: 'Luxury 5-star hotel in the heart of Mumbai', 
@@ -43,6 +46,7 @@ const companies = [
     },
     { 
         name: 'Pizza Palace', 
+        slug: 'pizza-palace',
         category: 'Restaurants', 
         location: 'Delhi, NCR', 
         description: 'Best pizza in town with 20+ varieties', 
@@ -54,6 +58,7 @@ const companies = [
     },
     { 
         name: 'Apollo Hospital', 
+        slug: 'apollo-hospital',
         category: 'Hospitals', 
         location: 'Bangalore, Karnataka', 
         description: 'Multi-specialty hospital with 24/7 emergency', 
@@ -65,6 +70,7 @@ const companies = [
     },
     { 
         name: 'DLF Cyber City', 
+        slug: 'dlf-cyber-city',
         category: 'Real Estate', 
         location: 'Gurugram, Haryana', 
         description: 'Premium commercial office space', 
@@ -76,6 +82,7 @@ const companies = [
     },
     { 
         name: 'Lakme Salon', 
+        slug: 'lakme-salon',
         category: 'Salons & Spa', 
         location: 'Pune, Maharashtra', 
         description: 'Professional beauty salon and spa services', 
@@ -87,6 +94,7 @@ const companies = [
     },
     { 
         name: 'Sony Electronics', 
+        slug: 'sony-electronics',
         category: 'Electronics', 
         location: 'Chennai, Tamil Nadu', 
         description: 'Authorized Sony showroom for all electronics', 
@@ -112,10 +120,13 @@ async function seed() {
         const salt = await bcrypt.genSalt(10);
         const defaultPassword = await bcrypt.hash('password123', salt);
         const adminPassword = await bcrypt.hash('admin@123', salt);
+        const trinetraPassword = await bcrypt.hash('trinetra123', salt);
 
         const usersWithPasswords = users.map(u => ({
             ...u,
-            password: u.email === 'admin@gmail.com' ? adminPassword : defaultPassword
+            password:
+                u.email === 'admintrinerta@gmail.com' ? trinetraPassword :
+                (u.email === 'admin@gmail.com' || u.email === 'adminfuerte@gmail.com') ? adminPassword : defaultPassword
         }));
 
         await User.insertMany(usersWithPasswords);
