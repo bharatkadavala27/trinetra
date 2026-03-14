@@ -12,7 +12,9 @@ const app = express();
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
-    'https://fuerte-dial.netlify.app'
+    'https://fuerte-dial.netlify.app',
+    'https://trinetra2.fuertedevelopers.com',
+    'https://engitech.fuertedevelopers.com'
 ];
 
 app.use(cors({
