@@ -24,6 +24,7 @@ const users = [
     { name: 'Super Admin', email: 'admin@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
     { name: 'Super Admin 2', email: 'adminfuerte@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
     { name: 'Trinetra Admin', email: 'admintrinerta@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
+    { name: 'Engitech Admin', email: 'adminengitech@gmail.com', role: 'Super Admin', status: 'Active', companiesOwned: 0 },
     { name: 'Rahul Sharma', email: 'rahul@example.com', role: 'Company Owner', status: 'Active', companiesOwned: 3 },
     { name: 'Priya Patel', email: 'priya@example.com', role: 'Company Owner', status: 'Active', companiesOwned: 2 },
     { name: 'Amit Verma', email: 'amit@example.com', role: 'User', status: 'Active', companiesOwned: 0 },
@@ -121,11 +122,13 @@ async function seed() {
         const defaultPassword = await bcrypt.hash('password123', salt);
         const adminPassword = await bcrypt.hash('admin@123', salt);
         const trinetraPassword = await bcrypt.hash('trinetra123', salt);
+        const engitechPassword = await bcrypt.hash('engitech123', salt);
 
         const usersWithPasswords = users.map(u => ({
             ...u,
             password:
                 u.email === 'admintrinerta@gmail.com' ? trinetraPassword :
+                u.email === 'adminengitech@gmail.com' ? engitechPassword :
                 (u.email === 'admin@gmail.com' || u.email === 'adminfuerte@gmail.com') ? adminPassword : defaultPassword
         }));
 

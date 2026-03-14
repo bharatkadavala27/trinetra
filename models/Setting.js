@@ -3,31 +3,31 @@ const mongoose = require('mongoose');
 const settingSchema = new mongoose.Schema({
     siteName: {
         type: String,
-        default: 'Justdial Clone',
+        default: 'Fuerte Developers',
     },
     logoUrl: {
         type: String,
-        default: '',
+        default: 'https://fuertedevelopers.in/logo.png',
     },
     primaryColor: {
         type: String,
-        default: '#274C64', // Tech Blue
+        default: '#0057FC', // Tech Blue
     },
     secondaryColor: {
         type: String,
-        default: '#F5AB34', // Brand Orange
+        default: '#FFDD0F', // Brand Orange
     },
     contactEmail: {
         type: String,
-        default: 'contact@justdial.com',
+        default: 'info@fuertedevelopers.in',
     },
     contactPhone: {
         type: String,
-        default: '+1 234 567 8900',
+        default: '+91 91062 55483',
     },
     footerText: {
         type: String,
-        default: '© 2026 Justdial Clone. All rights reserved.',
+        default: '© 2026 Fuerte Developers - Web, App & Software Development',
     }
 }, { timestamps: true });
 

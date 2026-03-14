@@ -41,11 +41,19 @@ exports.getStates = async (req, res) => {
 exports.getCities = async (req, res) => {
     try {
         const { state_id } = req.query;
-        if (!state_id) return res.status(400).json({ success: false, msg: 'state_id is required' });
-
-        const cities = await City.find({ state_id, status: 'Active' }).sort({ name: 1 });
+        
+        let cities;
+        if (state_id) {
+            // Get cities for specific state
+            cities = await City.find({ state_id, status: 'Active' }).sort({ name: 1 });
+        } else {
+            // Get all cities if no state_id provided (for homepage dropdown)
+            cities = await City.find({ status: 'Active' }).sort({ name: 1 }).limit(50);
+        }
+        
         res.status(200).json({ success: true, count: cities.length, data: cities });
     } catch (err) {
+        console.error('Get Cities Error:', err);
         res.status(500).json({ success: false, msg: 'Server Error' });
     }
 };

@@ -13,7 +13,7 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary,
     params: async (req, file) => ({
-        folder: 'justdial',           // All uploads go into a 'justdial' folder on Cloudinary
+        folder: 'fuertedevelopers',           // All uploads go into a 'fuertedevelopers' folder on Cloudinary
         allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov'],
         resource_type: 'auto',        // Important for video support
         transformation: file.mimetype.startsWith('video/') 

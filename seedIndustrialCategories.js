@@ -157,10 +157,11 @@ const seedIndustrialDB = async () => {
         await mongoose.connect(MONGO_URI);
         console.log('✅ Connected to MongoDB');
 
-        // Note: We are ADDING these categories, not clearing. 
+        // Note: We are ADDING these categories as top-level, not clearing. 
         // If we want to avoid duplicates, we should check by slug.
         
         let addedCount = 0;
+        let updatedCount = 0;
         let skippedCount = 0;
 
         for (const catData of industrialCategories) {
@@ -169,18 +170,26 @@ const seedIndustrialDB = async () => {
                 const newCategory = new Category({
                     ...catData,
                     status: 'Active',
-                    subCount: 0
+                    subCount: 0,
+                    parent: null
                 });
                 await newCategory.save();
                 console.log(`📂 Created industrial category: ${newCategory.name}`);
                 addedCount++;
             } else {
-                console.log(`⚠️  Category already exists: ${catData.name}`);
-                skippedCount++;
+                // Update existing to ensure it's top-level
+                if (existing.parent !== null) {
+                    await Category.updateOne({ slug: catData.slug }, { parent: null });
+                    console.log(`🔄 Updated category to top-level: ${catData.name}`);
+                    updatedCount++;
+                } else {
+                    console.log(`⚠️  Category already exists as top-level: ${catData.name}`);
+                    skippedCount++;
+                }
             }
         }
 
-        console.log(`\n🚀 Seeding completed! Added: ${addedCount}, Skipped: ${skippedCount}`);
+        console.log(`\n🚀 Seeding completed! Added: ${addedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}`);
     } catch (err) {
         console.error('❌ Seeding failed:', err);
     } finally {

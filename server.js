@@ -47,6 +47,8 @@ app.use('/api/products', require('./routes/products'));
 app.use('/api/services', require('./routes/services'));
 app.use('/api/brand-locations', require('./routes/brandLocations'));
 app.use('/api/claims', require('./routes/claimRoutes'));
+app.use('/api/leads', require('./routes/leads'));
+app.use('/api/otp', require('./routes/otp'));
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/trinetra';
 const PORT = process.env.PORT || 5000;

@@ -1,6 +1,6 @@
-# Justdial Backend
+# Fuerte Developers Backend
 
-This is the backend for the Justdial clone project.
+This is the backend for the Fuerte Developers business listing platform.
 
 ## Project Structure
 

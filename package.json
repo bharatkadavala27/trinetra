@@ -1,7 +1,7 @@
 {
     "name": "Furete-backend",
     "version": "1.0.0",
-    "description": "Backend for JustDial Clone",
+    "description": "Backend for Fuerte Developers Business Listing Platform",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",

@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
     resetPasswordExpire: Date,
     role: {
         type: String,
-        enum: ['Super Admin', 'Company Owner', 'Brand Owner', 'User'],
+        enum: ['Super Admin', 'Company Owner', 'Brand Owner', 'Merchant', 'User'],
         default: 'User'
     },
     status: {
@@ -38,6 +38,15 @@ const userSchema = new mongoose.Schema({
     companiesOwned: {
         type: Number,
         default: 0
+    },
+    performanceScore: {
+        type: Number,
+        default: 100
+    },
+    leadStats: {
+        totalAssigned: { type: Number, default: 0 },
+        totalConverted: { type: Number, default: 0 },
+        avgResponseTime: { type: Number, default: 0 }
     }
 }, { timestamps: true });
 

@@ -22,12 +22,14 @@ exports.protect = async (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
         
         // Find user and attach to request
+            console.log('Decoded Token:', decoded);
         const user = await User.findById(decoded.id);
         if (!user) {
             return res.status(401).json({ msg: 'User no longer exists' });
         }
         
         req.user = user;
+            console.log('User attached to request:', user);
         next();
     } catch (err) {
         return res.status(401).json({ msg: 'Not authorized to access this route' });
@@ -48,6 +50,12 @@ exports.attachOwnedBrands = async (req, res, next) => {
 // Grant access to specific roles
 exports.authorize = (...roles) => {
     return (req, res, next) => {
+        if (!req.user || typeof req.user.role === 'undefined') {
+            console.error('authorize middleware: req.user or req.user.role is undefined', req.user);
+            return res.status(401).json({
+                msg: 'User not authenticated or role missing.'
+            });
+        }
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
                 msg: `User role ${req.user.role} is not authorized to access this route`
