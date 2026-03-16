@@ -74,6 +74,14 @@ const leadSchema = new mongoose.Schema({
     agreedToPrivacy: {
         type: Boolean,
         default: false
+    },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    merchantReply: {
+        text: String,
+        date: Date
     }
 }, { timestamps: true });
 

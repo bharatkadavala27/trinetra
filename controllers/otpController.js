@@ -1,48 +1,85 @@
+const User = require('../models/User');
 const OTP = require('../models/OTP');
 
-// Send OTP (Mock)
+// @desc    Send OTP to mobile
+// @route   POST /api/otp/send
+// @access  Public
 exports.sendOTP = async (req, res) => {
     try {
-        const { phone } = req.body;
-        if (!phone) return res.status(400).json({ success: false, message: 'Phone number is required' });
+        const { mobileNumber } = req.body;
+
+        if (!mobileNumber) {
+            return res.status(400).json({ msg: 'Please provide a mobile number' });
+        }
+
+        // Check for rate limiting (max 5 attempts per hour)
+        const existingOTP = await OTP.findOne({ phone: mobileNumber });
+        if (existingOTP && existingOTP.attempts >= 5) {
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+            if (existingOTP.lastAttempt > oneHourAgo) {
+                return res.status(429).json({ msg: 'Too many OTP attempts. Please try again after an hour.' });
+            } else {
+                // Reset if an hour has passed
+                existingOTP.attempts = 0;
+            }
+        }
 
         // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // Clear existing OTPs for this phone
-        await OTP.deleteMany({ phone });
+        // Save/Update to DB
+        await OTP.findOneAndUpdate(
+            { phone: mobileNumber },
+            { 
+                otp, 
+                $inc: { attempts: 1 }, 
+                lastAttempt: Date.now(),
+                createdAt: Date.now() // Refresh TTL
+            },
+            { upsert: true, new: true }
+        );
 
-        // Save new OTP
-        await OTP.create({ phone, otp });
+        // MOCK: SMS dispatch (MSG91 / Twilio architecture)
+        console.log(`[SMS MOCK] Sending OTP ${otp} to ${mobileNumber}`);
+        
+        // In a real app:
+        // if (process.env.MSG91_AUTH_KEY) { 
+        //    await sendSMS(mobileNumber, otp); 
+        // }
 
-        // MOCK: Log to console instead of sending SMS
-        console.log(`\n---------------------------------`);
-        console.log(`[VERIFICATION] OTP for ${phone}: ${otp}`);
-        console.log(`---------------------------------\n`);
-
-        res.json({ success: true, message: 'OTP sent successfully (Check console)' });
+        res.json({ success: true, msg: 'OTP sent successfully' });
     } catch (err) {
-        console.error('Send OTP Error:', err);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
-// Verify OTP
+// @desc    Verify OTP
+// @route   POST /api/otp/verify
+// @access  Public
 exports.verifyOTP = async (req, res) => {
     try {
-        const { phone, otp } = req.body;
-        if (!phone || !otp) return res.status(400).json({ success: false, message: 'Phone and OTP are required' });
+        const { mobileNumber, otp } = req.body;
 
-        const record = await OTP.findOne({ phone, otp });
-        if (!record) {
-            return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+        if (!mobileNumber || !otp) {
+            return res.status(400).json({ msg: 'Please provide mobile number and OTP' });
         }
 
-        // OTP is valid, delete it
-        await OTP.deleteOne({ _id: record._id });
+        const otpRecord = await OTP.findOne({ phone: mobileNumber });
 
-        res.json({ success: true, message: 'OTP verified' });
+        if (!otpRecord || otpRecord.otp !== otp) {
+            return res.status(400).json({ msg: 'Invalid or expired OTP' });
+        }
+
+        // Mark user as OTP verified if they exist
+        await User.findOneAndUpdate({ mobileNumber }, { otpVerified: true });
+
+        // Delete OTP record after successful verification
+        await OTP.deleteOne({ _id: otpRecord._id });
+
+        res.json({ success: true, msg: 'OTP verified successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 };

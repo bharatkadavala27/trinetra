@@ -14,7 +14,7 @@ const generateToken = (id, role, name, email) => {
 // @access  Public
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, role } = req.body;
+        const { name, email, password, mobileNumber, role } = req.body;
 
         let user = await User.findOne({ email });
         if (user) {
@@ -31,6 +31,7 @@ exports.register = async (req, res) => {
         user = await User.create({
             name,
             email,
+            mobileNumber,
             password: hashedPassword,
             role: role || 'User',
             verificationToken
@@ -75,10 +76,25 @@ exports.login = async (req, res) => {
             return res.status(401).json({ msg: 'Invalid credentials' });
         }
 
-        // Check if status is suspended
-        if (user.status === 'Suspended') {
-            return res.status(403).json({ msg: 'Account suspended. Contact support.' });
+        // Check if status is suspended or banned
+        if (user.status === 'Suspended' || user.status === 'Banned') {
+            const reason = user.banReason ? ` Reason: ${user.banReason}` : '';
+            return res.status(403).json({ msg: `Account ${user.status.toLowerCase()}. Contact support.${reason}` });
         }
+
+        // Record login history
+        user.loginHistory.push({
+            device: req.headers['user-agent'],
+            ip: req.ip || req.connection.remoteAddress,
+            timestamp: new Date()
+        });
+
+        // Keep only last 10 sessions
+        if (user.loginHistory.length > 10) {
+            user.loginHistory.shift();
+        }
+
+        await user.save();
 
         const token = generateToken(user._id, user.role, user.name, user.email);
 

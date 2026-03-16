@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany } = require('../controllers/companyController');
+const { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany, autocomplete } = require('../controllers/companyController');
 const { protect, attachOwnedBrands } = require('../middleware/authMiddleware');
+
+// @route   GET /api/companies/autocomplete
+router.get('/autocomplete', autocomplete);
 
 // @route   GET /api/companies
 router.get('/', (req, res, next) => {

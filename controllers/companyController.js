@@ -110,8 +110,39 @@ const getAllCompanies = async (req, res) => {
             });
         }
 
-        // Sort by createdAt descending
-        companies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // 8. AI Ranking & Recommendation Logic
+        const Setting = require('../models/Setting');
+        const siteSettings = await Setting.findOne().lean();
+        const weights = siteSettings?.rankingWeights || {
+            reviews: 1.0,
+            distance: 1.0,
+            responseTime: 1.0,
+            premium: 1.5
+        };
+
+        companies = companies.map(c => {
+            let score = 0;
+            
+            // Factor 1: Reviews & Ratings
+            if (c.rating) score += (c.rating * weights.reviews);
+            if (c.reviewCount) score += (Math.log10(c.reviewCount + 1) * weights.reviews * 0.5);
+            
+            // Factor 2: Premium Status (isFeatured)
+            if (c.isFeatured) score += (10 * weights.premium);
+            
+            // Factor 3: Response Time (Penalize slow response)
+            // Assuming 30 mins is baseline, faster is better
+            const responsePenalty = (c.responseTime || 30) / 60; // normalized to hours
+            score -= (responsePenalty * weights.responseTime);
+            
+            // Factor 4: Manual Rank (Highest Priority)
+            score += (c.manualRank || 0) * 100;
+
+            return { ...c, rankScore: score };
+        });
+
+        // Sort by rankScore descending
+        companies.sort((a, b) => b.rankScore - a.rankScore);
 
         res.json(companies);
     } catch (err) {
@@ -179,6 +210,26 @@ const updateCompany = async (req, res) => {
         // For Brand Owner, don't allow changing the owner
         if (req.user.role === 'Brand Owner') {
             delete body.owner;
+        }
+
+        // Audit Trail Logic
+        const trackFields = ['name', 'status', 'verified', 'verificationStatus', 'owner', 'manualRank'];
+        const changes = [];
+        trackFields.forEach(field => {
+            if (body[field] !== undefined && String(body[field]) !== String(company[field])) {
+                changes.push({
+                    field: field,
+                    oldValue: company[field],
+                    newValue: body[field],
+                    changedBy: req.user._id
+                });
+            }
+        });
+
+        if (changes.length > 0) {
+            await Company.findByIdAndUpdate(req.params.id, {
+                $push: { changeHistory: { $each: changes } }
+            });
         }
 
         company = await Company.findByIdAndUpdate(
@@ -300,4 +351,33 @@ const claimCompany = async (req, res) => {
     }
 };
 
-module.exports = { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany };
+// @desc    Autocomplete for search (Keywords, Categories, Companies)
+// @route   GET /api/companies/autocomplete
+// @access  Public
+const autocomplete = async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q || q.length < 2) return res.json([]);
+
+        const regex = new RegExp(q, 'i');
+        
+        // Parallel search for Categories and Companies
+        const [categories, companyNames] = await Promise.all([
+            Category.find({ name: regex }).limit(5).select('name -_id').lean(),
+            Company.find({ name: regex }).limit(5).select('name -_id').lean()
+        ]);
+
+        // Flatten and merge results
+        const results = [
+            ...categories.map(c => ({ text: c.name, type: 'Category' })),
+            ...companyNames.map(c => ({ text: c.name, type: 'Business' }))
+        ];
+
+        res.json(results);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+module.exports = { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany, autocomplete };

@@ -78,7 +78,11 @@ exports.createLead = async (req, res) => {
 // Get all leads (admin)
 exports.getLeads = async (req, res) => {
     try {
-        const leads = await Lead.find()
+        const { userId } = req.query;
+        let query = {};
+        if (userId) query.userId = userId;
+        
+        const leads = await Lead.find(query)
             .sort({ createdAt: -1 })
             .populate('business')
             .populate('assignedTo', 'name email');
@@ -127,6 +131,13 @@ exports.updateLeadStatus = async (req, res) => {
         if (status) lead.status = status;
         if (priority) lead.priority = priority;
         if (followUpDate) lead.followUpDate = followUpDate;
+        
+        if (req.body.merchantReply) {
+            lead.merchantReply = {
+                text: req.body.merchantReply,
+                date: new Date()
+            };
+        }
 
         await lead.save();
         res.json({ success: true, lead });

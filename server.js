@@ -49,8 +49,19 @@ app.use('/api/brand-locations', require('./routes/brandLocations'));
 app.use('/api/claims', require('./routes/claimRoutes'));
 app.use('/api/leads', require('./routes/leads'));
 app.use('/api/otp', require('./routes/otp'));
+app.use('/api/reviews', require('./routes/reviews'));
+app.use('/api/plans', require('./routes/plans'));
+app.use('/api/coupons', require('./routes/coupons'));
+app.use('/api/subscriptions', require('./routes/subscriptions'));
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/tickets', require('./routes/tickets'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/enquiries', require('./routes/enquiries'));
+app.use('/api/fraud', require('./routes/fraud'));
+app.use('/api/cms', require('./routes/cms'));
+app.use('/api/merchant', require('./routes/merchant'));
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/trinetra';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/fuerte_db';
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(MONGO_URI)

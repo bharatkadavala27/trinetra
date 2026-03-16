@@ -30,20 +30,24 @@ exports.updateSettings = async (req, res) => {
         const {
             siteName,
             logoUrl,
+            faviconUrl,
             primaryColor,
             secondaryColor,
             contactEmail,
             contactPhone,
-            footerText
+            footerText,
+            rankingWeights
         } = req.body;
 
         if (siteName !== undefined) settings.siteName = siteName;
         if (logoUrl !== undefined) settings.logoUrl = logoUrl;
+        if (faviconUrl !== undefined) settings.faviconUrl = faviconUrl;
         if (primaryColor !== undefined) settings.primaryColor = primaryColor;
         if (secondaryColor !== undefined) settings.secondaryColor = secondaryColor;
         if (contactEmail !== undefined) settings.contactEmail = contactEmail;
         if (contactPhone !== undefined) settings.contactPhone = contactPhone;
         if (footerText !== undefined) settings.footerText = footerText;
+        if (rankingWeights !== undefined) settings.rankingWeights = rankingWeights;
 
         await settings.save();
 

@@ -9,6 +9,10 @@ const settingSchema = new mongoose.Schema({
         type: String,
         default: 'https://fuertedevelopers.in/logo.png',
     },
+    faviconUrl: {
+        type: String,
+        default: 'https://fuertedevelopers.in/favicon.ico',
+    },
     primaryColor: {
         type: String,
         default: '#0057FC', // Tech Blue
@@ -28,6 +32,12 @@ const settingSchema = new mongoose.Schema({
     footerText: {
         type: String,
         default: '© 2026 Fuerte Developers - Web, App & Software Development',
+    },
+    rankingWeights: {
+        reviews: { type: Number, default: 1.0 },
+        distance: { type: Number, default: 1.0 },
+        responseTime: { type: Number, default: 1.0 },
+        premium: { type: Number, default: 1.5 }
     }
 }, { timestamps: true });
 

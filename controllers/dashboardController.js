@@ -7,6 +7,58 @@ const BrandLocation = require('../models/BrandLocation');
 const Lead = require('../models/Lead');
 const ClaimRequest = require('../models/ClaimRequest');
 
+const ADMIN_ROLES = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer'];
+const KPI_WINDOW_DAYS = 30;
+const TIMELINE_DAYS = 7;
+
+const getStartOfUtcDay = (daysAgo = 0) => {
+    const date = new Date();
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    return date;
+};
+
+const getUtcDateKey = (date) => {
+    return date.toISOString().slice(0, 10);
+};
+
+const getPercentChange = (currentValue, previousValue) => {
+    if (!previousValue) {
+        return currentValue > 0 ? 100 : 0;
+    }
+
+    return Number((((currentValue - previousValue) / previousValue) * 100).toFixed(1));
+};
+
+const aggregateDailyCounts = async (Model, match, startDate) => {
+    const rows = await Model.aggregate([
+        {
+            $match: {
+                ...match,
+                createdAt: { $gte: startDate }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: '%Y-%m-%d',
+                        date: '$createdAt',
+                        timezone: 'UTC'
+                    }
+                },
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { _id: 1 } }
+    ]);
+
+    return rows.reduce((accumulator, row) => {
+        accumulator[row._id] = row.count;
+        return accumulator;
+    }, {});
+};
+
 // @desc    Get dashboard statistics
 // @route   GET /api/dashboard/stats
 const getDashboardStats = async (req, res) => {
@@ -18,6 +70,18 @@ const getDashboardStats = async (req, res) => {
         let locationQuery = {};
         let categoryQuery = { status: 'Active' };
         let leadQuery = {};
+        const adminQuery = { role: { $in: ADMIN_ROLES } };
+        const currentWindowStart = getStartOfUtcDay(KPI_WINDOW_DAYS - 1);
+        const previousWindowStart = getStartOfUtcDay((KPI_WINDOW_DAYS * 2) - 1);
+        const timelineStart = getStartOfUtcDay(TIMELINE_DAYS - 1);
+
+        const currentWindowFilter = { createdAt: { $gte: currentWindowStart } };
+        const previousWindowFilter = {
+            createdAt: {
+                $gte: previousWindowStart,
+                $lt: currentWindowStart
+            }
+        };
 
         if (isBrandOwner) {
             const brandIds = req.ownedBrandIds || [];
@@ -40,7 +104,21 @@ const getDashboardStats = async (req, res) => {
             leadStats,
             merchantStats,
             categoryStats,
-            recentActivity
+            recentActivity,
+            currentCompanies,
+            previousCompanies,
+            currentUsers,
+            previousUsers,
+            currentLeads,
+            previousLeads,
+            currentPendingClaims,
+            previousPendingClaims,
+            companiesTimeline,
+            usersTimeline,
+            leadsTimeline,
+            claimsTimeline,
+            adminTeam,
+            adminTeamCount
         ] = await Promise.all([
             User.countDocuments(),
             Company.countDocuments(companyQuery),
@@ -82,8 +160,57 @@ const getDashboardStats = async (req, res) => {
                     ...users.map(u => ({ type: 'user', title: `Joined: ${u.name}`, detail: u.role, time: u.createdAt }))
                 ];
                 return activities.sort((a, b) => b.time - a.time).slice(0, 5);
-            })
+            }),
+
+            Company.countDocuments({ ...companyQuery, ...currentWindowFilter }),
+            Company.countDocuments({ ...companyQuery, ...previousWindowFilter }),
+            !isBrandOwner ? User.countDocuments(currentWindowFilter) : Promise.resolve(0),
+            !isBrandOwner ? User.countDocuments(previousWindowFilter) : Promise.resolve(0),
+            Lead.countDocuments({ ...leadQuery, ...currentWindowFilter }),
+            Lead.countDocuments({ ...leadQuery, ...previousWindowFilter }),
+            ClaimRequest.countDocuments({ status: 'Pending', ...currentWindowFilter }),
+            ClaimRequest.countDocuments({ status: 'Pending', ...previousWindowFilter }),
+            aggregateDailyCounts(Company, companyQuery, timelineStart),
+            !isBrandOwner ? aggregateDailyCounts(User, {}, timelineStart) : Promise.resolve({}),
+            aggregateDailyCounts(Lead, leadQuery, timelineStart),
+            aggregateDailyCounts(ClaimRequest, { status: 'Pending' }, timelineStart),
+            !isBrandOwner
+                ? User.find(adminQuery)
+                    .sort({ createdAt: -1 })
+                    .limit(4)
+                    .select('name role')
+                    .lean()
+                : Promise.resolve([]),
+            !isBrandOwner ? User.countDocuments(adminQuery) : Promise.resolve(0)
         ]);
+
+        const totalTrackedLeads = leadStats.reduce((sum, stage) => sum + stage.count, 0);
+        const resolvedLeadStatuses = new Set(['Converted', 'Closed']);
+        const resolvedLeads = leadStats.reduce((sum, stage) => {
+            return resolvedLeadStatuses.has(stage._id) ? sum + stage.count : sum;
+        }, 0);
+
+        const pipelineSummary = {
+            totalTrackedLeads,
+            resolvedLeads,
+            resolutionRate: totalTrackedLeads > 0
+                ? Number(((resolvedLeads / totalTrackedLeads) * 100).toFixed(1))
+                : 0
+        };
+
+        const timeline = Array.from({ length: TIMELINE_DAYS }, (_, index) => {
+            const date = getStartOfUtcDay(TIMELINE_DAYS - 1 - index);
+            const isoDate = getUtcDateKey(date);
+
+            return {
+                date: isoDate,
+                label: date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }),
+                listings: companiesTimeline[isoDate] || 0,
+                users: usersTimeline[isoDate] || 0,
+                leads: leadsTimeline[isoDate] || 0,
+                pendingClaims: claimsTimeline[isoDate] || 0
+            };
+        });
 
         res.json({
             totalUsers: isBrandOwner ? null : totalUsers,
@@ -96,7 +223,18 @@ const getDashboardStats = async (req, res) => {
             leadPipeline: leadStats,
             merchantHealth: merchantStats,
             topCategories: categoryStats,
-            recentActivity
+            recentActivity,
+            adminTeam,
+            adminTeamCount,
+            pipelineSummary,
+            timeline,
+            kpiTrends: {
+                totalCompanies: getPercentChange(currentCompanies, previousCompanies),
+                totalUsers: isBrandOwner ? null : getPercentChange(currentUsers, previousUsers),
+                totalLeads: getPercentChange(currentLeads, previousLeads),
+                pendingClaims: getPercentChange(currentPendingClaims, previousPendingClaims)
+            },
+            generatedAt: new Date().toISOString()
         });
     } catch (err) {
         console.error(err.message);
