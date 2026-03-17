@@ -6,6 +6,9 @@ const Service = require('../models/Service');
 const BrandLocation = require('../models/BrandLocation');
 const Lead = require('../models/Lead');
 const ClaimRequest = require('../models/ClaimRequest');
+const Transaction = require('../models/Transaction');
+const City = require('../models/City');
+const mongoose = require('mongoose');
 
 const ADMIN_ROLES = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer'];
 const KPI_WINDOW_DAYS = 30;
@@ -118,7 +121,15 @@ const getDashboardStats = async (req, res) => {
             leadsTimeline,
             claimsTimeline,
             adminTeam,
-            adminTeamCount
+            adminTeamCount,
+            totalRevenue,
+            currentRevenue,
+            previousRevenue,
+            leadsToday,
+            listingsStatus,
+            pendingModerationListings,
+            topCities,
+            revenueTimeline
         ] = await Promise.all([
             User.countDocuments(),
             Company.countDocuments(companyQuery),
@@ -148,18 +159,20 @@ const getDashboardStats = async (req, res) => {
                 { $limit: 5 }
             ]),
 
-            // Recent Activity (derived from multiple collections)
+            // Recent Activity (derived from multiple collections) - Increased to 20
             Promise.all([
-                Lead.find(leadQuery).sort({ createdAt: -1 }).limit(3).select('name category source createdAt'),
-                ClaimRequest.find().sort({ createdAt: -1 }).limit(2).select('fullName businessEmail status createdAt'),
-                User.find().sort({ createdAt: -1 }).limit(2).select('name role createdAt')
-            ]).then(([leads, claims, users]) => {
+                Lead.find(leadQuery).sort({ createdAt: -1 }).limit(10).select('name category source createdAt'),
+                ClaimRequest.find().sort({ createdAt: -1 }).limit(5).select('fullName businessEmail status createdAt'),
+                User.find().sort({ createdAt: -1 }).limit(5).select('name role createdAt'),
+                Company.find(companyQuery).sort({ createdAt: -1 }).limit(5).select('name status createdAt')
+            ]).then(([leads, claims, users, companies]) => {
                 const activities = [
                     ...leads.map(l => ({ type: 'lead', title: `New Lead: ${l.name}`, detail: l.category, time: l.createdAt })),
                     ...claims.map(c => ({ type: 'claim', title: `Claim: ${c.fullName}`, detail: c.status, time: c.createdAt })),
-                    ...users.map(u => ({ type: 'user', title: `Joined: ${u.name}`, detail: u.role, time: u.createdAt }))
+                    ...users.map(u => ({ type: 'user', title: `Joined: ${u.name}`, detail: u.role, time: u.createdAt })),
+                    ...companies.map(c => ({ type: 'company', title: `Listing: ${c.name}`, detail: c.status, time: c.createdAt }))
                 ];
-                return activities.sort((a, b) => b.time - a.time).slice(0, 5);
+                return activities.sort((a, b) => b.time - a.time).slice(0, 20);
             }),
 
             Company.countDocuments({ ...companyQuery, ...currentWindowFilter }),
@@ -181,7 +194,90 @@ const getDashboardStats = async (req, res) => {
                     .select('name role')
                     .lean()
                 : Promise.resolve([]),
-            !isBrandOwner ? User.countDocuments(adminQuery) : Promise.resolve(0)
+            !isBrandOwner ? User.countDocuments(adminQuery) : Promise.resolve(0),
+
+            // Total Revenue
+            Transaction.aggregate([
+                { $match: { status: 'success' } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]).then(res => res[0]?.total || 0),
+
+            // Current Window Revenue
+            Transaction.aggregate([
+                { $match: { status: 'success', ...currentWindowFilter } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]).then(res => res[0]?.total || 0),
+
+            // Previous Window Revenue
+            Transaction.aggregate([
+                { $match: { status: 'success', ...previousWindowFilter } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]).then(res => res[0]?.total || 0),
+
+            // Leads Today
+            Lead.countDocuments({ 
+                ...leadQuery, 
+                createdAt: { $gte: getStartOfUtcDay(0) } 
+            }),
+
+            // Active vs Inactive Listings
+            Company.aggregate([
+                { $match: companyQuery },
+                { $group: { _id: "$status", count: { $sum: 1 } } }
+            ]),
+
+            // Pending Moderation Listings
+            Company.countDocuments({ status: 'Pending' }),
+
+            // Top Cities (with lookup for names)
+            Company.aggregate([
+                { $match: { ...companyQuery, city_id: { $ne: null } } },
+                { $group: { _id: "$city_id", count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 10 },
+                {
+                    $lookup: {
+                        from: 'cities',
+                        localField: '_id',
+                        foreignField: '_id',
+                        as: 'cityInfo'
+                    }
+                },
+                { $unwind: '$cityInfo' },
+                {
+                    $project: {
+                        _id: 1,
+                        count: 1,
+                        name: '$cityInfo.name'
+                    }
+                }
+            ]),
+
+            // Revenue Timeline
+            Transaction.aggregate([
+                {
+                    $match: {
+                        status: 'success',
+                        createdAt: { $gte: timelineStart }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$createdAt',
+                                timezone: 'UTC'
+                            }
+                        },
+                        amount: { $sum: '$amount' }
+                    }
+                },
+                { $sort: { _id: 1 } }
+            ]).then(rows => rows.reduce((acc, row) => {
+                acc[row._id] = row.amount;
+                return acc;
+            }, {}))
         ]);
 
         const totalTrackedLeads = leadStats.reduce((sum, stage) => sum + stage.count, 0);
@@ -208,9 +304,18 @@ const getDashboardStats = async (req, res) => {
                 listings: companiesTimeline[isoDate] || 0,
                 users: usersTimeline[isoDate] || 0,
                 leads: leadsTimeline[isoDate] || 0,
-                pendingClaims: claimsTimeline[isoDate] || 0
+                pendingClaims: claimsTimeline[isoDate] || 0,
+                revenue: revenueTimeline[isoDate] || 0
             };
         });
+
+        // System Health Status
+        const systemHealth = {
+            api: 'Healthy',
+            database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+            queue: 'Online',
+            uptime: Math.floor(process.uptime())
+        };
 
         res.json({
             totalUsers: isBrandOwner ? null : totalUsers,
@@ -220,6 +325,11 @@ const getDashboardStats = async (req, res) => {
             totalProducts,
             totalServices,
             totalBrandLocations,
+            totalRevenue,
+            leadsToday,
+            listingsStatus,
+            pendingModerationListings,
+            topCities,
             leadPipeline: leadStats,
             merchantHealth: merchantStats,
             topCategories: categoryStats,
@@ -228,11 +338,13 @@ const getDashboardStats = async (req, res) => {
             adminTeamCount,
             pipelineSummary,
             timeline,
+            systemHealth,
             kpiTrends: {
                 totalCompanies: getPercentChange(currentCompanies, previousCompanies),
                 totalUsers: isBrandOwner ? null : getPercentChange(currentUsers, previousUsers),
                 totalLeads: getPercentChange(currentLeads, previousLeads),
-                pendingClaims: getPercentChange(currentPendingClaims, previousPendingClaims)
+                pendingClaims: getPercentChange(currentPendingClaims, previousPendingClaims),
+                totalRevenue: getPercentChange(currentRevenue, previousRevenue)
             },
             generatedAt: new Date().toISOString()
         });

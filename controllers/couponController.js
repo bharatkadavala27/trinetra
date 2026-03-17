@@ -1,4 +1,5 @@
 const Coupon = require('../models/Coupon');
+const AdminAuditLog = require('../models/AdminAuditLog');
 
 // @desc    Admin: Get all coupons
 // @route   GET /api/coupons
@@ -20,6 +21,18 @@ exports.createCoupon = async (req, res) => {
     try {
         const coupon = new Coupon(req.body);
         await coupon.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'COUPON_CREATED',
+            targetType: 'Coupon',
+            targetId: coupon._id,
+            notes: `Code: ${coupon.code}, Type: ${coupon.discountType}, Value: ${coupon.discountValue}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
         res.status(201).json(coupon);
     } catch (err) {
         console.error(err.message);
@@ -68,6 +81,47 @@ exports.toggleCoupon = async (req, res) => {
         
         coupon.isActive = !coupon.isActive;
         await coupon.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'COUPON_TOGGLED',
+            targetType: 'Coupon',
+            targetId: coupon._id,
+            notes: `Status changed to: ${coupon.isActive ? 'Active' : 'Inactive'}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.json(coupon);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+};
+
+// @desc    Admin: Update a coupon
+// @route   PUT /api/coupons/:id
+// @access  Private/Admin
+exports.updateCoupon = async (req, res) => {
+    try {
+        const coupon = await Coupon.findByIdAndUpdate(
+            req.params.id, 
+            req.body, 
+            { new: true, runValidators: true }
+        );
+        if (!coupon) return res.status(404).json({ msg: 'Coupon not found' });
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'COUPON_UPDATED',
+            targetType: 'Coupon',
+            targetId: coupon._id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
         res.json(coupon);
     } catch (err) {
         console.error(err.message);

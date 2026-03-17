@@ -481,6 +481,12 @@ const moderateFraudAlert = async (req, res) => {
             alert.status = 'confirmed';
             alert.isResolved = true;
             alert.resolvedAt = new Date();
+        } else if (action === 'quarantine' && alert.targetModel === 'Review') {
+            // Reject the review and potentially suspend user
+            await Review.findByIdAndUpdate(alert.targetId, { status: 'Rejected', moderationNotes: reason });
+            alert.status = 'confirmed';
+            alert.isResolved = true;
+            alert.resolvedAt = new Date();
         }
 
         await alert.save();
@@ -623,6 +629,124 @@ const importBlacklistCSV = async (req, res) => {
     }
 };
 
+// ==================== CONTENT SPAM CHECK ====================
+
+const checkContentForSpam = (text) => {
+    if (!text) return { isSpam: false };
+
+    const spamKeywords = [
+        'buy cheap', 'viagra', 'casino', 'betting', 'earn money fast',
+        'crypto investment', 'whatsapp me', 'telegram me', 'low price guarantee',
+        'weight loss fast', 'lottery winner', 'urgent prize', 'pills online'
+    ];
+
+    const foundKeywords = spamKeywords.filter(keyword => 
+        text.toLowerCase().includes(keyword.toLowerCase())
+    );
+
+    // Also check for excessive special characters or repetitive text
+    const specialChars = (text.match(/[!?;:,$%^&*()]/g) || []).length;
+    const specialRatio = specialChars / text.length;
+
+    if (foundKeywords.length > 0) {
+        return { isSpam: true, reason: `Spam keywords: ${foundKeywords.join(', ')}` };
+    }
+
+    if (specialRatio > 0.2 && text.length > 50) {
+        return { isSpam: true, reason: 'Excessive special characters' };
+    }
+
+    return { isSpam: false };
+};
+
+// ==================== REAL-TIME FRAUD CHECK ====================
+
+const realTimeFraudCheck = async (type, data, userId, metadata = {}) => {
+    try {
+        const issuesFound = [];
+        let severity = 'low';
+
+        // 1. Blacklist Checks
+        if (metadata.ipAddress && await Blacklist.isBlacklisted('ip', metadata.ipAddress)) {
+            issuesFound.push({ reason: 'Blacklisted IP address', severity: 'high' });
+        }
+        if (data.phone && await Blacklist.isBlacklisted('phone', data.phone)) {
+            issuesFound.push({ reason: 'Blacklisted phone number', severity: 'high' });
+        }
+        if (data.email && await Blacklist.isBlacklisted('email', data.email)) {
+            issuesFound.push({ reason: 'Blacklisted email address', severity: 'high' });
+        }
+
+        // 2. Content Checks
+        const contentToCheck = type === 'listing' ? `${data.name} ${data.description}` : data.comment;
+        const contentResult = checkContentForSpam(contentToCheck);
+        if (contentResult.isSpam) {
+            issuesFound.push({ reason: contentResult.reason, severity: 'medium' });
+        }
+
+        // 3. Duplicate Checks (Real-time)
+        if (type === 'listing' && data.phone) {
+            const existing = await Company.findOne({ phone: data.phone, status: { $ne: 'Rejected' }, _id: { $ne: data._id } });
+            if (existing) {
+                issuesFound.push({ reason: 'Duplicate phone number detected', severity: 'medium' });
+            }
+        }
+
+        if (type === 'review') {
+            const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const userRecentReviews = await Review.countDocuments({
+                userId,
+                createdAt: { $gte: twentyFourHoursAgo }
+            });
+
+            if (userRecentReviews >= 5) {
+                issuesFound.push({ reason: 'High review velocity (5+ in 24h)', severity: 'high' });
+            }
+
+            if (metadata.ipAddress) {
+                const ipDuplicates = await Review.countDocuments({
+                    businessId: data.businessId,
+                    'metadata.ipAddress': metadata.ipAddress,
+                    status: 'Approved'
+                });
+                if (ipDuplicates >= 1) {
+                    issuesFound.push({ reason: 'Multiple reviews from same IP on this business', severity: 'medium' });
+                }
+            }
+        }
+
+        if (issuesFound.length > 0) {
+            // Determine combined severity
+            if (issuesFound.some(a => a.severity === 'high')) severity = 'high';
+            else if (issuesFound.some(a => a.severity === 'medium')) severity = 'medium';
+
+            const alertData = {
+                type,
+                severity,
+                reason: issuesFound[0].reason,
+                description: `Detected suspicious activity: ${issuesFound.map(a => a.reason).join('; ')}`,
+                targetModel: type === 'listing' ? 'Company' : (type === 'review' ? 'Review' : 'User'),
+                metadata: {
+                    ...metadata,
+                    relatedReasons: issuesFound.map(a => a.reason)
+                }
+            };
+
+            return {
+                isSuspicious: true,
+                severity,
+                reasons: issuesFound.map(a => a.reason),
+                alertData
+            };
+        }
+
+        return { isSuspicious: false };
+    } catch (err) {
+        console.error('Real-time fraud check error:', err);
+        return { isSuspicious: false };
+    }
+};
+
 // Export blacklist to CSV
 const exportBlacklistCSV = async (req, res) => {
     try {
@@ -657,5 +781,6 @@ module.exports = {
     importBlacklistCSV,
     exportBlacklistCSV,
     checkUserVelocity,
-    checkBlacklist
+    checkBlacklist,
+    realTimeFraudCheck
 };

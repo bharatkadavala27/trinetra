@@ -22,6 +22,30 @@ const citySchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'Inactive'],
         default: 'Active'
+    },
+    boundary: {
+        type: {
+            type: String,
+            enum: ['Polygon'],
+            default: 'Polygon'
+        },
+        coordinates: {
+            type: [[[Number]]], // Array of arrays of arrays of numbers
+            default: []
+        }
+    },
+    isPopular: {
+        type: Boolean,
+        default: false
+    },
+    order: {
+        type: Number,
+        default: 0
+    },
+    meta: {
+        title: { type: String, trim: true },
+        description: { type: String, trim: true },
+        keywords: { type: String, trim: true }
     }
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 

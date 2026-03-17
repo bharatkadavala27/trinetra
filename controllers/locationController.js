@@ -45,10 +45,10 @@ exports.getCities = async (req, res) => {
         let cities;
         if (state_id) {
             // Get cities for specific state
-            cities = await City.find({ state_id, status: 'Active' }).sort({ name: 1 });
+            cities = await City.find({ state_id, status: 'Active' }).sort({ isPopular: -1, order: 1, name: 1 });
         } else {
             // Get all cities if no state_id provided (for homepage dropdown)
-            cities = await City.find({ status: 'Active' }).sort({ name: 1 }).limit(50);
+            cities = await City.find({ status: 'Active' }).sort({ isPopular: -1, order: 1, name: 1 }).limit(50);
         }
         
         res.status(200).json({ success: true, count: cities.length, data: cities });
@@ -153,17 +153,30 @@ exports.adminGetCities = async (req, res) => {
     try {
         const cities = await City.find().populate({ path: 'state_id', select: 'name country_id', populate: { path: 'country_id', select: 'name' } }).sort({ name: 1 });
         res.status(200).json({ success: true, data: cities });
-    } catch (err) { console.log(err); res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('adminGetCities Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };
 
 exports.createCity = async (req, res) => {
     try {
-        const { state_id, name, status, slug } = req.body;
+        const { state_id, name, status, slug, boundary, isPopular, order, meta } = req.body;
         const citySlug = slug ? generateSlug(slug) : generateSlug(name);
 
-        const city = await City.create({ state_id, name, status, slug: citySlug });
+        const city = await City.create({ 
+            state_id, 
+            name, 
+            status, 
+            slug: citySlug,
+            boundary,
+            isPopular,
+            order,
+            meta
+        });
         res.status(201).json({ success: true, data: city });
     } catch (err) {
+        console.error('createCity Error:', err);
         if (err.code === 11000) return res.status(400).json({ success: false, msg: 'City name or slug already exists' });
         res.status(500).json({ success: false, msg: 'Server Error' });
     }
@@ -180,7 +193,10 @@ exports.updateCity = async (req, res) => {
         const city = await City.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
         if (!city) return res.status(404).json({ success: false, msg: 'City not found' });
         res.status(200).json({ success: true, data: city });
-    } catch (err) { res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('updateCity Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };
 
 exports.deleteCity = async (req, res) => {
@@ -189,7 +205,10 @@ exports.deleteCity = async (req, res) => {
         if (!city) return res.status(404).json({ success: false, msg: 'City not found' });
         await Area.deleteMany({ city_id: req.params.id });
         res.status(200).json({ success: true, data: {} });
-    } catch (err) { res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('deleteCity Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };
 
 // --- Areas ---
@@ -197,17 +216,23 @@ exports.adminGetAreas = async (req, res) => {
     try {
         const areas = await Area.find().populate({ path: 'city_id', select: 'name state_id', populate: { path: 'state_id', select: 'name' } }).sort({ name: 1 });
         res.status(200).json({ success: true, data: areas });
-    } catch (err) { res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('adminGetAreas Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };
 
 exports.createArea = async (req, res) => {
     try {
-        const { city_id, name, pincode, status, slug } = req.body;
+        const { city_id, name, pincode, status, slug, meta } = req.body;
+        if (!city_id) return res.status(400).json({ success: false, msg: 'city_id is required' });
+        
         const areaSlug = slug ? generateSlug(slug) : generateSlug(name);
 
-        const area = await Area.create({ city_id, name, pincode, status, slug: areaSlug });
+        const area = await Area.create({ city_id, name, pincode, status, slug: areaSlug, meta });
         res.status(201).json({ success: true, data: area });
     } catch (err) {
+        console.error('createArea Error:', err);
         if (err.code === 11000) return res.status(400).json({ success: false, msg: 'Area name or slug already exists' });
         res.status(500).json({ success: false, msg: 'Server Error' });
     }
@@ -224,7 +249,10 @@ exports.updateArea = async (req, res) => {
         const area = await Area.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
         if (!area) return res.status(404).json({ success: false, msg: 'Area not found' });
         res.status(200).json({ success: true, data: area });
-    } catch (err) { res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('updateArea Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };
 
 exports.deleteArea = async (req, res) => {
@@ -232,5 +260,8 @@ exports.deleteArea = async (req, res) => {
         const area = await Area.findByIdAndDelete(req.params.id);
         if (!area) return res.status(404).json({ success: false, msg: 'Area not found' });
         res.status(200).json({ success: true, data: {} });
-    } catch (err) { res.status(500).json({ success: false, msg: 'Server Error' }); }
+    } catch (err) {
+        console.error('deleteArea Error:', err);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
 };

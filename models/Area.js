@@ -26,6 +26,11 @@ const areaSchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'Inactive'],
         default: 'Active'
+    },
+    meta: {
+        title: { type: String, trim: true },
+        description: { type: String, trim: true },
+        keywords: { type: String, trim: true }
     }
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 

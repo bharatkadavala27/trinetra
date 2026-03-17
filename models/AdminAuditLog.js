@@ -43,13 +43,21 @@ const adminAuditLogSchema = new mongoose.Schema({
             'ADMIN_USER_DEACTIVATED',
             'ADMIN_SESSION_FORCED_LOGOUT',
             'MESSAGE_SENT',
-            'BULK_ACTION_EXECUTED'
+            'BULK_ACTION_EXECUTED',
+            'PLAN_CREATED',
+            'PLAN_UPDATED',
+            'PLAN_ARCHIVED',
+            'SUBSCRIPTION_ASSIGNED',
+            'SUBSCRIPTION_UPDATED',
+            'COUPON_CREATED',
+            'COUPON_UPDATED',
+            'COUPON_TOGGLED'
         ]
     },
     // What was affected
     targetType: {
         type: String,
-        enum: ['User', 'Listing', 'Review', 'Role', 'AdminUser', 'System']
+        enum: ['User', 'Listing', 'Review', 'Role', 'AdminUser', 'System', 'Plan', 'Subscription', 'Coupon']
     },
     targetId: mongoose.Schema.Types.ObjectId,
     // Changes detail

@@ -1,4 +1,5 @@
 const Plan = require('../models/Plan');
+const AdminAuditLog = require('../models/AdminAuditLog');
 
 // @desc    Get all plans
 // @route   GET /api/plans
@@ -33,6 +34,18 @@ exports.createPlan = async (req, res) => {
     try {
         const plan = new Plan(req.body);
         await plan.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'PLAN_CREATED',
+            targetType: 'Plan',
+            targetId: plan._id,
+            notes: `Name: ${plan.name}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
         res.status(201).json(plan);
     } catch (err) {
         console.error(err.message);
@@ -47,6 +60,18 @@ exports.updatePlan = async (req, res) => {
     try {
         const plan = await Plan.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!plan) return res.status(404).json({ msg: 'Plan not found' });
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'PLAN_UPDATED',
+            targetType: 'Plan',
+            targetId: plan._id,
+            notes: `Name: ${plan.name}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
         res.json(plan);
     } catch (err) {
         console.error(err.message);
@@ -66,6 +91,17 @@ exports.deletePlan = async (req, res) => {
         plan.isArchived = true;
         await plan.save();
         
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'PLAN_ARCHIVED',
+            targetType: 'Plan',
+            targetId: plan._id,
+            notes: `Name: ${plan.name}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
         res.json({ msg: 'Plan archived successfully' });
     } catch (err) {
         console.error(err.message);

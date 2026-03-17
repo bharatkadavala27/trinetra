@@ -2,6 +2,7 @@ const Subscription = require('../models/Subscription');
 const Plan = require('../models/Plan');
 const Transaction = require('../models/Transaction');
 const Invoice = require('../models/Invoice');
+const AdminAuditLog = require('../models/AdminAuditLog');
 
 // @desc    Get current subscription for a business
 // @route   GET /api/subscriptions/business/:businessId
@@ -96,6 +97,60 @@ exports.mockCheckout = async (req, res) => {
             success: true,
             subscription,
             invoice
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+};
+
+// @desc    Admin: Manually assign/update subscription for a business
+// @route   POST /api/subscriptions/admin-assign
+// @access  Private/Admin
+exports.adminAssignSubscription = async (req, res) => {
+    try {
+        const { businessId, planId, billingCycle, startDate, endDate, priceAtPurchase, status } = req.body;
+
+        const plan = await Plan.findById(planId);
+        if (!plan) return res.status(404).json({ msg: 'Plan not found' });
+
+        let subscription = await Subscription.findOne({ businessId });
+
+        if (subscription) {
+            subscription.planId = planId;
+            subscription.billingCycle = billingCycle;
+            subscription.startDate = startDate || subscription.startDate;
+            subscription.endDate = endDate;
+            subscription.priceAtPurchase = priceAtPurchase;
+            subscription.status = status || 'active';
+        } else {
+            subscription = new Subscription({
+                businessId,
+                planId,
+                billingCycle,
+                startDate: startDate || new Date(),
+                endDate,
+                priceAtPurchase,
+                status: status || 'active'
+            });
+        }
+
+        await subscription.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: subscription.__v === 0 ? 'SUBSCRIPTION_ASSIGNED' : 'SUBSCRIPTION_UPDATED',
+            targetType: 'Subscription',
+            targetId: subscription._id,
+            notes: `Plan: ${plan.name}, Cycle: ${billingCycle}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.json({
+            success: true,
+            data: subscription
         });
     } catch (err) {
         console.error(err.message);

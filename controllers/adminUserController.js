@@ -88,6 +88,12 @@ exports.getAllUsersAdmin = async (req, res) => {
                 page: parseInt(page),
                 limit: parseInt(limit),
                 pages: Math.ceil(total / parseInt(limit))
+            },
+            filters: {
+                search,
+                status,
+                role,
+                sortBy
             }
         });
     } catch (err) {
@@ -110,7 +116,7 @@ exports.getUserDetailAdmin = async (req, res) => {
         // Get user's reviews
         const Review = require('../models/Review');
         const reviews = await Review.find({ userId: user._id })
-            .populate('businessId', 'name')
+            .populate('businessId', 'name slug')
             .select('businessId rating comment createdAt status')
             .limit(10)
             .sort({ createdAt: -1 });
@@ -118,23 +124,26 @@ exports.getUserDetailAdmin = async (req, res) => {
         // Get user's enquiries
         const Enquiry = require('../models/Enquiry');
         const enquiries = await Enquiry.find({ userId: user._id })
-            .populate('businessIds', 'name')
+            .populate('businessIds', 'name slug')
             .select('businessIds message status createdAt')
             .limit(10)
             .sort({ createdAt: -1 });
 
-        // Get login history
-        const loginHistory = user.loginHistory.slice(-20);
+        // Stats summary
+        const stats = {
+            totalReviews: await Review.countDocuments({ userId: user._id }),
+            totalEnquiries: await Enquiry.countDocuments({ userId: user._id }),
+            lastActive: user.loginHistory.length > 0 ? user.loginHistory[user.loginHistory.length - 1].timestamp : user.updatedAt
+        };
 
         res.json({
             success: true,
             user,
+            stats,
             activity: {
-                reviewCount: reviews.length,
-                enquiryCount: enquiries.length,
                 recentReviews: reviews,
                 recentEnquiries: enquiries,
-                loginHistory
+                loginHistory: user.loginHistory.slice(-20).reverse()
             }
         });
     } catch (err) {
@@ -478,6 +487,10 @@ exports.mergeAccounts = async (req, res) => {
         
         await Review.updateMany({ userId: secondaryUserId }, { userId: primaryUserId });
         await Enquiry.updateMany({ userId: secondaryUserId }, { userId: primaryUserId });
+
+        // Merge company ownership
+        const Company = require('../models/Company');
+        await Company.updateMany({ owner: secondaryUserId }, { owner: primaryUserId });
 
         // Delete secondary user
         await User.findByIdAndDelete(secondaryUserId);

@@ -26,7 +26,9 @@ exports.getAllListingsAdmin = async (req, res) => {
             plan,
             sortBy = '-createdAt', 
             page = 1, 
-            limit = 20
+            limit = 20,
+            dateStart,
+            dateEnd
         } = req.query;
 
         let query = {};
@@ -63,6 +65,17 @@ exports.getAllListingsAdmin = async (req, res) => {
         // Filter by plan
         if (plan) {
             query.plan = plan;
+        }
+
+        // Filter by date range
+        if (dateStart || dateEnd) {
+            query.createdAt = {};
+            if (dateStart) query.createdAt.$gte = new Date(dateStart);
+            if (dateEnd) {
+                const end = new Date(dateEnd);
+                end.setHours(23, 59, 59, 999);
+                query.createdAt.$lte = end;
+            }
         }
 
         // Pagination
@@ -459,6 +472,171 @@ exports.checkDuplicates = async (req, res) => {
             success: true,
             duplicates,
             hasPossibleDuplicates: duplicates.length > 0
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// @desc    Bulk listing actions (approve, reject, delete)
+// @route   POST /api/admin/listings/bulk-action
+exports.bulkListingAction = async (req, res) => {
+    try {
+        const { ids, action, reason } = req.body;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ success: false, msg: 'No listing IDs provided' });
+        }
+
+        const validActions = ['approve', 'reject', 'delete'];
+        if (!validActions.includes(action)) {
+            return res.status(400).json({ success: false, msg: 'Invalid bulk action' });
+        }
+
+        let result;
+        if (action === 'delete') {
+            result = await Company.deleteMany({ _id: { $in: ids } });
+            
+            // Log audit for deletion
+            await AdminAuditLog.create({
+                adminId: req.user._id,
+                action: 'LISTING_BULK_DELETED',
+                targetType: 'Listing',
+                notes: `Deleted ${ids.length} listings`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']
+            });
+        } else {
+            const statusMap = {
+                approve: 'Approved',
+                reject: 'Rejected'
+            };
+            
+            const stageMap = {
+                approve: 'Approved',
+                reject: 'Rejected'
+            };
+
+            const updateData = {
+                status: statusMap[action],
+                'approvalStatus.stage': stageMap[action],
+                'approvalStatus.reviewedBy': req.user._id,
+                'approvalStatus.reviewedAt': new Date()
+            };
+
+            if (action === 'reject' && reason) {
+                updateData['approvalStatus.rejectionReason'] = reason;
+            }
+
+            result = await Company.updateMany(
+                { _id: { $in: ids } },
+                { $set: updateData }
+            );
+
+            // Log audit
+            await AdminAuditLog.create({
+                adminId: req.user._id,
+                action: action === 'approve' ? 'LISTING_BULK_APPROVED' : 'LISTING_BULK_REJECTED',
+                targetType: 'Listing',
+                notes: `${action === 'approve' ? 'Approved' : 'Rejected'} ${ids.length} listings`,
+                changes: { after: { status: statusMap[action], reason } },
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']
+            });
+        }
+
+        res.json({
+            success: true,
+            msg: `Bulk ${action} successful`,
+            affectedCount: result.modifiedCount || result.deletedCount || 0
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// @desc    Export listings to CSV
+// @route   GET /api/admin/listings/export/csv
+exports.exportListingsCsv = async (req, res) => {
+    try {
+        const { search, status, category, city, plan, dateStart, dateEnd } = req.query;
+
+        let query = {};
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+        if (status) query.status = status === 'PendingApproval' ? 'Pending' : status;
+        if (category) query.category_id = category;
+        if (city) query.city_id = city;
+        if (plan) query.plan = plan;
+        if (dateStart || dateEnd) {
+            query.createdAt = {};
+            if (dateStart) query.createdAt.$gte = new Date(dateStart);
+            if (dateEnd) {
+                const end = new Date(dateEnd);
+                end.setHours(23, 59, 59, 999);
+                query.createdAt.$lte = end;
+            }
+        }
+
+        const listings = await Company.find(query)
+            .populate('owner', 'name email')
+            .populate('category_id', 'name')
+            .populate('city_id', 'name')
+            .sort('-createdAt');
+
+        // Generate CSV content
+        const headers = ['Business Name', 'Owner', 'Email', 'Phone', 'Category', 'City', 'Plan', 'Status', 'Verified', 'Created At'];
+        const rows = listings.map(l => [
+            l.name,
+            l.owner?.name || 'N/A',
+            l.email || l.owner?.email || 'N/A',
+            l.phone || 'N/A',
+            l.category_id?.name || l.category || 'N/A',
+            l.city_id?.name || 'N/A',
+            l.plan?.name || 'Free',
+            l.status,
+            l.verified ? 'Yes' : 'No',
+            new Date(l.createdAt).toLocaleDateString()
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=listings_export_${new Date().getTime()}.csv`);
+        res.status(200).send(csvContent);
+
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// @desc    Get change history (audit trail) for a listing
+// @route   GET /api/admin/listings/:id/audit
+exports.getListingAuditTrail = async (req, res) => {
+    try {
+        const listing = await Company.findById(req.params.id)
+            .populate('changeHistory.changedBy', 'name email')
+            .select('name changeHistory');
+
+        if (!listing) {
+            return res.status(404).json({ success: false, msg: 'Listing not found' });
+        }
+
+        res.json({
+            success: true,
+            listingName: listing.name,
+            auditTrail: listing.changeHistory.sort((a, b) => b.date - a.date)
         });
     } catch (err) {
         console.error(err.message);

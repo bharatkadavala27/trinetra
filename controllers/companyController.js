@@ -171,8 +171,35 @@ const createCompany = async (req, res) => {
             }
         }
 
+        // Fraud & Spam Detection
+        const FraudAlert = require('../models/FraudAlert');
+        const { realTimeFraudCheck } = require('./fraudController');
+        
+        const metadata = {
+            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent']
+        };
+
+        const fraudResult = await realTimeFraudCheck('listing', body, req.user?._id, metadata);
+
+        if (fraudResult.isSuspicious) {
+            // Auto-flag the company but still create it as Pending
+            body.verificationStatus = 'Flagged';
+            body.status = 'Pending';
+        }
+
         const company = new Company(body);
         await company.save();
+
+        if (fraudResult.isSuspicious) {
+            // Create the fraud alert linked to the new company
+            await FraudAlert.create({
+                ...fraudResult.alertData,
+                targetId: company._id,
+                targetModel: 'Company',
+                status: 'pending'
+            });
+        }
 
         const populatedCompany = await Company.findById(company._id)
             .populate('city_id', 'name slug')

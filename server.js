@@ -60,6 +60,8 @@ app.use('/api/enquiries', require('./routes/enquiries'));
 app.use('/api/fraud', require('./routes/fraud'));
 app.use('/api/cms', require('./routes/cms'));
 app.use('/api/merchant', require('./routes/merchant'));
+app.use('/api/revenue',  require('./routes/revenue'));
+app.use('/api/ads',      require('./routes/ads'));
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/fuerte_db';
 const PORT = process.env.PORT || 5000;

@@ -3,7 +3,7 @@ const Company = require('../models/Company');
 
 // Helper to recalculate and update company rating
 const recalculateCompanyRating = async (businessId) => {
-    const reviews = await Review.find({ businessId, status: 'Approved' });
+    const reviews = await Review.find({ businessId, status: 'Approved', isDeleted: { $ne: true } });
     const company = await Company.findById(businessId);
     
     if (company) {
@@ -42,7 +42,42 @@ exports.addReview = async (req, res) => {
             aspects: req.body.aspects || { quality: 0, service: 0, value: 0 }
         });
 
+        // Fraud & Spam Detection
+        const FraudAlert = require('../models/FraudAlert');
+        const { realTimeFraudCheck } = require('./fraudController');
+        
+        const metadata = {
+            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent']
+        };
+
+        const fraudResult = await realTimeFraudCheck('review', { businessId, comment }, req.user.id, metadata);
+
+        if (fraudResult.isSuspicious) {
+            review.status = 'Pending'; // Force moderation
+            if (fraudResult.severity === 'high') {
+                review.status = 'Suspended'; // Hide immediately if high risk
+            }
+        }
+
+        // Attach metadata to review for historical tracking
+        review.metadata = {
+            ...review.metadata,
+            ipAddress: metadata.ipAddress,
+            userAgent: metadata.userAgent
+        };
+
         await review.save();
+
+        if (fraudResult.isSuspicious) {
+            // Create the fraud alert linked to the new review
+            await FraudAlert.create({
+                ...fraudResult.alertData,
+                targetId: review._id,
+                targetModel: 'Review',
+                status: 'pending'
+            });
+        }
 
         // Update company rating average
         if (review.status === 'Approved') {
@@ -52,7 +87,7 @@ exports.addReview = async (req, res) => {
         res.status(201).json(review);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -71,7 +106,7 @@ exports.getBusinessReviews = async (req, res) => {
         res.json(reviews);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -88,7 +123,7 @@ exports.getAllReviews = async (req, res) => {
         res.json(reviews);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -124,7 +159,7 @@ exports.updateReviewStatus = async (req, res) => {
         res.json(review);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -152,7 +187,7 @@ exports.deleteReview = async (req, res) => {
         res.json({ msg: 'Review removed' });
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -171,7 +206,7 @@ exports.getLatestReviews = async (req, res) => {
         res.json(reviews);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };
 
@@ -187,6 +222,6 @@ exports.getUserReviews = async (req, res) => {
         res.json(reviews);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error' });
     }
 };

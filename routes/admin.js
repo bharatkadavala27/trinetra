@@ -25,8 +25,16 @@ const {
     flagListing,
     suspendListing,
     deleteListing,
-    checkDuplicates
+    checkDuplicates,
+    bulkListingAction,
+    exportListingsCsv,
+    getListingAuditTrail
 } = require('../controllers/adminListingController');
+const {
+    getAllReviewsAdmin,
+    bulkReviewAction,
+    addModerationNote
+} = require('../controllers/adminReviewController');
 const {
     getAllRoles,
     getRoleDetail,
@@ -70,6 +78,14 @@ router.put('/listings/:id/flag', authorize('Super Admin', 'Admin', 'Moderator'),
 router.put('/listings/:id/suspend', authorize('Super Admin', 'Admin'), suspendListing);
 router.delete('/listings/:id', authorize('Super Admin', 'Admin'), deleteListing);
 router.get('/listings/:id/check-duplicates', authorize('Super Admin', 'Admin'), checkDuplicates);
+router.post('/listings/bulk-action', authorize('Super Admin', 'Admin'), bulkListingAction);
+router.get('/listings/export/csv', authorize('Super Admin', 'Admin'), exportListingsCsv);
+router.get('/listings/:id/audit', authorize('Super Admin', 'Admin', 'Moderator'), getListingAuditTrail);
+
+// ==================== REVIEW MODERATION ====================
+router.get('/reviews', authorize('Super Admin', 'Admin', 'Moderator'), getAllReviewsAdmin);
+router.post('/reviews/bulk-action', authorize('Super Admin', 'Admin'), bulkReviewAction);
+router.put('/reviews/:id/note', authorize('Super Admin', 'Admin', 'Moderator'), addModerationNote);
 
 // ==================== ROLE MANAGEMENT ====================
 router.get('/roles', authorize('Super Admin', 'Admin'), getAllRoles);

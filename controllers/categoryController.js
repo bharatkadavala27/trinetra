@@ -21,7 +21,7 @@ const getAllCategories = async (req, res) => {
             // For now, let's just keep it simple: Super Admin sees all, Public sees all, Brand Owner sees theirs + global.
             // Actually, if Public sees all, then Brand Owner seeing theirs + global is redundant if theirs is already a subset of all.
             // But we want to isolate brand categories from other brands.
-            query.brandId = null; 
+            query.brandId = null;
         }
 
         const categories = await Category.find(query).sort({ createdAt: -1 });
@@ -98,7 +98,7 @@ const updateCategory = async (req, res) => {
                 return res.status(403).json({ msg: 'Not authorized to update this category' });
             }
         }
-          const oldParent = category.parent;
+        const oldParent = category.parent;
 
         const categoryFields = {};
         if (name) categoryFields.name = name;
@@ -144,7 +144,7 @@ const deleteCategory = async (req, res) => {
                 return res.status(403).json({ msg: 'Not authorized to delete this category' });
             }
         }
-          // Block deletion if subcategories exist
+        // Block deletion if subcategories exist
         if (category.subCount > 0) {
             return res.status(400).json({ msg: 'Cannot delete category with subcategories' });
         }
