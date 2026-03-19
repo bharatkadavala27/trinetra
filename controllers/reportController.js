@@ -7,7 +7,8 @@ const Enquiry = require('../models/Enquiry');
 const Review = require('../models/Review');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const { Parser } = require('json2csv');
-const PdfPrinter = require('pdfmake/js/printer').default;
+const PdfPrinter = require('pdfmake/build/pdfmake');
+const vfsFonts = require('pdfmake/build/vfs_fonts');
 const path = require('path');
 const fs = require('fs');
 
@@ -29,6 +30,9 @@ const fonts = {
         bolditalics: path.join(__dirname, '../fonts/Roboto-MediumItalic.ttf')
     }
 };
+
+// Setup vfs fonts for pdfmake 0.3.x
+PdfPrinter.vfs = vfsFonts.pdfMake.vfs;
 
 // Ensure fonts directory exists or use a fallback (In a real environment, fonts would be in the project)
 // For this environment, we'll try to provide a simple PDF or handle errors gracefully.
