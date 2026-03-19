@@ -3,8 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const generateToken = (id, role, name, email) => {
-    return jwt.sign({ id, role, name, email }, process.env.JWT_SECRET || 'fallback_secret', {
+const generateToken = (id, role, name, email, tokenVersion = 0) => {
+    return jwt.sign({ id, role, name, email, tokenVersion }, process.env.JWT_SECRET || 'fallback_secret', {
         expiresIn: '30d',
     });
 };
@@ -40,7 +40,7 @@ exports.register = async (req, res) => {
         // In a real app, send email here using nodemailer
         console.log(`Email verification link: http://localhost:5173/verify-email/${verificationToken}`);
 
-        const token = generateToken(user._id, user.role, user.name, user.email);
+        const token = generateToken(user._id, user.role, user.name, user.email, user.tokenVersion);
 
         res.status(201).json({
             success: true,
@@ -96,7 +96,7 @@ exports.login = async (req, res) => {
 
         await user.save();
 
-        const token = generateToken(user._id, user.role, user.name, user.email);
+        const token = generateToken(user._id, user.role, user.name, user.email, user.tokenVersion);
 
         res.json({
             success: true,

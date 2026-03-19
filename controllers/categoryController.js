@@ -16,12 +16,11 @@ const getAllCategories = async (req, res) => {
                 { brandId: null },
                 { brandId: { $in: req.ownedBrandIds || [] } }
             ];
-        } else if (!req.user || req.user.role !== 'Super Admin') {
-            // For general public, only show global categories (unless they are browsing a brand)
-            // For now, let's just keep it simple: Super Admin sees all, Public sees all, Brand Owner sees theirs + global.
-            // Actually, if Public sees all, then Brand Owner seeing theirs + global is redundant if theirs is already a subset of all.
-            // But we want to isolate brand categories from other brands.
-            query.brandId = null;
+        }
+
+        // 0. Enforce Active status for public requests
+        if (!req.user || (req.user.role !== 'Admin' && req.user.role !== 'Developer' && req.user.role !== 'Super Admin')) {
+            query.status = 'Active';
         }
 
         const categories = await Category.find(query).sort({ createdAt: -1 });

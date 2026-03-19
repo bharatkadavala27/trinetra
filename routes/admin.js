@@ -13,8 +13,12 @@ const {
     mergeAccounts,
     bulkUserAction,
     sendSystemMessage,
-    exportUsersToCsv
+    exportUsersToCsv,
+    forceLogout,
+    createAdminUser,
+    updateAdminUser
 } = require('../controllers/adminUserController');
+const ipWhitelist = require('../middleware/ipWhitelistMiddleware');
 const {
     getAllListingsAdmin,
     getListingDetailAdmin,
@@ -47,19 +51,36 @@ const {
     getAuditLogDetail,
     getAuditReportByAction,
     getAuditReportByAdmin,
-    getAdminActivitySummary
+    getAdminActivitySummary,
+    exportAuditLogsCsv
 } = require('../controllers/auditLogController');
+const {
+    getTemplates,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+    getBroadcasts,
+    createBroadcast,
+    executeBroadcast,
+    deleteBroadcast,
+    cloneBroadcast,
+    getSegmentsData
+} = require('../controllers/broadcastController');
 
-// Protect all admin routes - requires authentication
+// Protect all admin routes - requires authentication and IP whitelisting
 router.use(protect);
+router.use(ipWhitelist);
 
 // ==================== USER MANAGEMENT ====================
 router.get('/users', authorize('Super Admin', 'Admin'), getAllUsersAdmin);
+router.post('/users', authorize('Super Admin'), createAdminUser);
 router.get('/users/:id', authorize('Super Admin', 'Admin'), getUserDetailAdmin);
+router.put('/users/:id', authorize('Super Admin'), updateAdminUser);
 router.put('/users/:id/verify', authorize('Super Admin', 'Admin'), verifyUser);
 router.put('/users/:id/ban', authorize('Super Admin', 'Admin'), banUser);
 router.put('/users/:id/unban', authorize('Super Admin', 'Admin'), unbanUser);
 router.put('/users/:id/force-password-reset', authorize('Super Admin', 'Admin'), forcePasswordReset);
+router.put('/users/:id/force-logout', authorize('Super Admin'), forceLogout);
 router.post('/users/:id/impersonate', authorize('Super Admin'), impersonateUser);
 router.delete('/users/:id', authorize('Super Admin', 'Admin'), deleteOrAnonymizeUser);
 router.post('/users/merge', authorize('Super Admin'), mergeAccounts);
@@ -95,10 +116,24 @@ router.put('/roles/:id', authorize('Super Admin'), updateRole);
 router.delete('/roles/:id', authorize('Super Admin'), deleteRole);
 
 // ==================== AUDIT LOGS ====================
+router.get('/audit-logs/export/csv', authorize('Super Admin', 'Finance'), exportAuditLogsCsv);
 router.get('/audit-logs', authorize('Super Admin', 'Admin', 'Finance'), getAuditLogs);
 router.get('/audit-logs/:id', authorize('Super Admin', 'Admin'), getAuditLogDetail);
 router.get('/audit-logs/report/by-action', authorize('Super Admin', 'Admin', 'Finance'), getAuditReportByAction);
 router.get('/audit-logs/report/by-admin', authorize('Super Admin', 'Finance'), getAuditReportByAdmin);
 router.get('/audit-logs/admin/:adminId/summary', authorize('Super Admin', 'Finance'), getAdminActivitySummary);
+
+// ==================== BROADCASTS & NOTIFICATIONS ====================
+router.get('/broadcasts/templates', authorize('Super Admin', 'Admin', 'Moderator'), getTemplates);
+router.post('/broadcasts/templates', authorize('Super Admin', 'Admin'), createTemplate);
+router.put('/broadcasts/templates/:id', authorize('Super Admin', 'Admin'), updateTemplate);
+router.delete('/broadcasts/templates/:id', authorize('Super Admin', 'Admin'), deleteTemplate);
+
+router.get('/broadcasts', authorize('Super Admin', 'Admin', 'Moderator'), getBroadcasts);
+router.get('/broadcasts/segments', authorize('Super Admin', 'Admin', 'Moderator'), getSegmentsData);
+router.post('/broadcasts', authorize('Super Admin', 'Admin'), createBroadcast);
+router.post('/broadcasts/:id/execute', authorize('Super Admin', 'Admin'), executeBroadcast);
+router.post('/broadcasts/:id/clone', authorize('Super Admin', 'Admin'), cloneBroadcast);
+router.delete('/broadcasts/:id', authorize('Super Admin', 'Admin'), deleteBroadcast);
 
 module.exports = router;

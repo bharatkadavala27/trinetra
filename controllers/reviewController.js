@@ -1,5 +1,5 @@
-const Review = require('../models/Review');
 const Company = require('../models/Company');
+const { sendNotification } = require('../services/notificationService');
 
 // Helper to recalculate and update company rating
 const recalculateCompanyRating = async (businessId) => {
@@ -84,6 +84,19 @@ exports.addReview = async (req, res) => {
             await recalculateCompanyRating(businessId);
         }
 
+        // Notify Business Owner about new review
+        if (company.owner) {
+            await sendNotification({
+                recipientId: company.owner,
+                senderId: req.user.id,
+                type: 'SYSTEM',
+                title: 'New Review Received',
+                message: `Someone just left a ${rating}-star review for ${company.name}`,
+                link: `/merchant/reviews`,
+                metadata: { reviewId: review._id, businessId: company._id }
+            });
+        }
+
         res.status(201).json(review);
     } catch (err) {
         console.error(err.message);
@@ -96,14 +109,124 @@ exports.addReview = async (req, res) => {
 // @access  Public
 exports.getBusinessReviews = async (req, res) => {
     try {
-        const reviews = await Review.find({ 
+        const { sort = 'recent', filter = 'all' } = req.query;
+        let query = { 
             businessId: req.params.businessId,
             status: 'Approved' 
-        })
-        .populate('userId', 'name')
-        .sort({ createdAt: -1 });
+        };
+
+        if (filter === 'photos') {
+            query.images = { $exists: true, $ne: [] };
+        }
+
+        let sortQuery = { createdAt: -1 };
+        if (sort === 'helpful') {
+            sortQuery = { 'helpfulVotes.count': -1, createdAt: -1 };
+        } else if (sort === 'ratingHigh') {
+            sortQuery = { rating: -1, createdAt: -1 };
+        } else if (sort === 'ratingLow') {
+            sortQuery = { rating: 1, createdAt: -1 };
+        }
+
+        const reviews = await Review.find(query)
+            .populate('userId', 'name')
+            .sort(sortQuery);
 
         res.json(reviews);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Vote on a review (Helpful / Not Helpful)
+// @route   POST /api/reviews/:id/vote
+// @access  Private
+exports.voteReview = async (req, res) => {
+    try {
+        const { type } = req.body; // 'helpful' or 'notHelpful'
+        if (!['helpful', 'notHelpful'].includes(type)) {
+            return res.status(400).json({ msg: 'Invalid vote type' });
+        }
+
+        const review = await Review.findById(req.params.id);
+        if (!review) {
+            return res.status(404).json({ msg: 'Review not found' });
+        }
+
+        const userId = req.user.id;
+        const helpfulVoters = review.helpfulVotes.voters.map(id => id.toString());
+        const notHelpfulVoters = review.notHelpfulVotes.voters.map(id => id.toString());
+
+        // Remove from other side if exists
+        if (type === 'helpful') {
+            if (helpfulVoters.includes(userId)) {
+                // Remove vote if clicking again
+                review.helpfulVotes.voters.pull(userId);
+                review.helpfulVotes.count = Math.max(0, review.helpfulVotes.count - 1);
+            } else {
+                review.helpfulVotes.voters.push(userId);
+                review.helpfulVotes.count += 1;
+                // Pull from notHelpful if existed
+                if (notHelpfulVoters.includes(userId)) {
+                    review.notHelpfulVotes.voters.pull(userId);
+                    review.notHelpfulVotes.count = Math.max(0, review.notHelpfulVotes.count - 1);
+                }
+            }
+        } else {
+            if (notHelpfulVoters.includes(userId)) {
+                review.notHelpfulVotes.voters.pull(userId);
+                review.notHelpfulVotes.count = Math.max(0, review.notHelpfulVotes.count - 1);
+            } else {
+                review.notHelpfulVotes.voters.push(userId);
+                review.notHelpfulVotes.count += 1;
+                if (helpfulVoters.includes(userId)) {
+                    review.helpfulVotes.voters.pull(userId);
+                    review.helpfulVotes.count = Math.max(0, review.helpfulVotes.count - 1);
+                }
+            }
+        }
+
+        await review.save();
+        res.json(review);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Report/Flag a review
+// @route   POST /api/reviews/:id/report
+// @access  Private
+exports.reportReview = async (req, res) => {
+    try {
+        const { reason, description } = req.body;
+        const review = await Review.findById(req.params.id);
+
+        if (!review) {
+            return res.status(404).json({ msg: 'Review not found' });
+        }
+
+        // Check if user already reported
+        const alreadyReported = review.flags.some(f => f.flaggedBy.toString() === req.user.id);
+        if (alreadyReported) {
+            return res.status(400).json({ msg: 'You have already reported this review' });
+        }
+
+        review.flags.push({
+            flaggedBy: req.user.id,
+            reason,
+            description,
+            flaggedAt: new Date()
+        });
+
+        // Optional: Auto-suspend if many flags
+        if (review.flags.length >= 5 && review.status !== 'Suspended') {
+            review.status = 'Pending'; // Move back to moderation
+        }
+
+        await review.save();
+        res.json({ msg: 'Review reported successfully' });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ msg: 'Server Error' });
@@ -154,6 +277,27 @@ exports.updateReviewStatus = async (req, res) => {
         // Recalculate company rating if status changed to/from 'Approved'
         if (oldStatus === 'Approved' || status === 'Approved') {
             await recalculateCompanyRating(review.businessId);
+        }
+
+        // Notify User about status update or reply
+        if (review.userId) {
+            let title = 'Review Status Updated';
+            let message = `Your review for ${review.businessId.name || 'a business'} has been ${status.toLowerCase()}.`;
+            
+            if (req.body.merchantReply) {
+                title = 'New Merchant Reply';
+                message = `The owner of ${review.businessId.name || 'the business'} has responded to your review.`;
+            }
+
+            await sendNotification({
+                recipientId: review.userId,
+                senderId: req.user.id,
+                type: 'SYSTEM',
+                title,
+                message,
+                link: `/profile/reviews`,
+                metadata: { reviewId: review._id }
+            });
         }
 
         res.json(review);

@@ -55,6 +55,22 @@ const rbacRoleSchema = new mongoose.Schema({
         },
         impersonation: {
             execute: { type: Boolean }
+        },
+        cmsManagement: {
+            read: { type: Boolean },
+            write: { type: Boolean },
+            delete: { type: Boolean },
+            approve: { type: Boolean }
+        },
+        visualManagement: {
+            read: { type: Boolean },
+            write: { type: Boolean },
+            delete: { type: Boolean }
+        },
+        seoManagement: {
+            read: { type: Boolean },
+            write: { type: Boolean },
+            delete: { type: Boolean }
         }
     }
 }, { timestamps: true });
@@ -70,7 +86,11 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: true },
         messaging: { read: true, write: true },
-        impersonation: { execute: true }
+        impersonation: { execute: true },
+        cmsManagement: { read: true, write: true, delete: true, approve: true },
+        visualManagement: { read: true, write: true, delete: true },
+        seoManagement: { read: true, write: true, delete: true },
+        reporting: { read: true, export: true }
     },
     'Admin': { // Can manage users and listings
         userManagement: { read: true, write: true, delete: false },
@@ -81,7 +101,11 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: true },
         messaging: { read: true, write: true },
-        impersonation: { execute: false }
+        impersonation: { execute: false },
+        cmsManagement: { read: true, write: true, delete: false, approve: true },
+        visualManagement: { read: true, write: true, delete: false },
+        seoManagement: { read: true, write: true, delete: false },
+        reporting: { read: true, export: true }
     },
     'Moderator': { // Can moderate reviews and content
         userManagement: { read: true, write: false, delete: false },
@@ -92,7 +116,10 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: false },
         messaging: { read: true, write: true },
-        impersonation: { execute: false }
+        impersonation: { execute: false },
+        cmsManagement: { read: true, write: false, delete: false, approve: true },
+        visualManagement: { read: true, write: false, delete: false },
+        seoManagement: { read: true, write: false, delete: false }
     },
     'Finance': { // Can view analytics and reports
         userManagement: { read: true, write: false, delete: false },
@@ -103,7 +130,10 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: true },
         messaging: { read: false, write: false },
-        impersonation: { execute: false }
+        impersonation: { execute: false },
+        cmsManagement: { read: true, write: false, delete: false, approve: false },
+        visualManagement: { read: true, write: false, delete: false },
+        seoManagement: { read: true, write: false, delete: false }
     },
     'Support': { // Can view and message users
         userManagement: { read: true, write: false, delete: false },
@@ -114,7 +144,10 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: false },
         messaging: { read: true, write: true },
-        impersonation: { execute: false }
+        impersonation: { execute: false },
+        cmsManagement: { read: true, write: false, delete: false, approve: false },
+        visualManagement: { read: true, write: false, delete: false },
+        seoManagement: { read: true, write: false, delete: false }
     },
     'Viewer': { // Read-only access
         userManagement: { read: true, write: false, delete: false },
@@ -125,7 +158,10 @@ const defaultPermissions = {
         auditLog: { read: true },
         analytics: { read: true },
         messaging: { read: false, write: false },
-        impersonation: { execute: false }
+        impersonation: { execute: false },
+        cmsManagement: { read: true, write: false, delete: false, approve: false },
+        visualManagement: { read: true, write: false, delete: false },
+        seoManagement: { read: true, write: false, delete: false }
     }
 };
 

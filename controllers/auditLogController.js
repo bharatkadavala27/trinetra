@@ -215,3 +215,47 @@ exports.getAdminActivitySummary = async (req, res) => {
         res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
     }
 };
+
+// @desc    Export audit logs to CSV
+// @route   GET /api/admin/audit-logs/export/csv
+exports.exportAuditLogsCsv = async (req, res) => {
+    try {
+        const { action, targetType, startDate, endDate } = req.query;
+
+        let query = {};
+        if (action) query.action = action;
+        if (targetType) query.targetType = targetType;
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) query.createdAt.$lte = new Date(endDate);
+        }
+
+        const logs = await AdminAuditLog.find(query)
+            .populate('adminId', 'name email')
+            .sort({ createdAt: -1 });
+
+        // Build CSV
+        const csv = [
+            ['Timestamp', 'Admin Name', 'Admin Email', 'Action', 'Target Type', 'Target ID', 'Status', 'IP Address', 'Notes'].join(','),
+            ...logs.map(log => [
+                log.createdAt.toISOString(),
+                `"${(log.adminId?.name || 'Deleted User').replace(/"/g, '""')}"`,
+                log.adminId?.email || 'N/A',
+                log.action,
+                log.targetType,
+                log.targetId || 'N/A',
+                log.status || 'success',
+                log.ipAddress || 'N/A',
+                `"${(log.notes || '').replace(/"/g, '""')}"`
+            ].join(','))
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="audit_logs_export.csv"');
+        res.send(csv);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};

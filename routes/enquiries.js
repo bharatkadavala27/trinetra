@@ -12,11 +12,12 @@ const {
     markEnquiryAsSpam
 } = require('../controllers/enquiryController');
 
+// User enquiry routes
+router.post('/', createEnquiry);
+
 // All enquiry routes require authentication
 router.use(protect);
 
-// User enquiry routes
-router.post('/', createEnquiry);
 router.get('/my-enquiries', getUserEnquiries);
 router.get('/:id', getEnquiryDetail);
 router.delete('/:id', deleteEnquiry);

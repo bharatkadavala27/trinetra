@@ -127,6 +127,40 @@ const userSchema = new mongoose.Schema({
         admin: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         at: Date,
         ipAddress: String
+    },
+    // For immediate session invalidation
+    tokenVersion: {
+        type: Number,
+        default: 0
+    },
+    // Saved/Bookmarked Listings
+    savedListings: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company'
+    }],
+    // Address Book
+    addressBook: [{
+        label: { type: String, default: 'Home' },
+        address: String,
+        isDefault: { type: Boolean, default: false }
+    }],
+    // Notification Preferences
+    notificationPreferences: {
+        email: { type: Boolean, default: true },
+        sms: { type: Boolean, default: false },
+        push: { type: Boolean, default: true },
+        whatsapp: { type: Boolean, default: false },
+        digestFrequency: { 
+            type: String, 
+            enum: ['Daily', 'Weekly', 'Monthly', 'None'], 
+            default: 'Weekly' 
+        },
+        lastDigestSent: { type: Date, default: null }
+    },
+    // Privacy Settings
+    privacySettings: {
+        profileVisible: { type: Boolean, default: true },
+        activityVisible: { type: Boolean, default: true }
     }
 }, { timestamps: true });
 

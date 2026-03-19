@@ -2,6 +2,7 @@ const Enquiry = require('../models/Enquiry');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const nodemailer = require('nodemailer');
+const { sendNotification } = require('../services/notificationService');
 
 // Configure nodemailer
 const transporter = nodemailer.createTransport({
@@ -90,6 +91,21 @@ exports.createEnquiry = async (req, res) => {
             transporter.sendMail(mailOptions, (err) => {
                 if (err) console.error('Email send error:', err);
             });
+        }
+
+        // Send In-app & Multi-channel notifications to Managers of these businesses
+        for (const business of businesses) {
+            if (business.owner) {
+                await sendNotification({
+                    recipientId: business.owner,
+                    senderId: req.user ? req.user._id : null,
+                    type: 'SYSTEM',
+                    title: 'New Enquiry Received',
+                    message: `${name} sent a new enquiry for ${business.name}`,
+                    link: `/merchant/leads/${enquiry._id}`,
+                    metadata: { enquiryId: enquiry._id, businessId: business._id }
+                });
+            }
         }
 
         // Send to merchant inbox (would integrate with lead system)
@@ -215,6 +231,22 @@ exports.resolveEnquiry = async (req, res) => {
         enquiry.resolvedBy = 'User';
         await enquiry.save();
 
+        // Notify Merchants that the enquiry is resolved
+        for (const businessId of enquiry.businessIds) {
+            const business = await Company.findById(businessId);
+            if (business && business.owner) {
+                await sendNotification({
+                    recipientId: business.owner,
+                    senderId: req.user._id,
+                    type: 'SYSTEM',
+                    title: 'Enquiry Resolved',
+                    message: `Enquiry #${enquiry._id.toString().slice(-6)} has been marked as resolved by the user.`,
+                    link: `/merchant/leads/${enquiry._id}`,
+                    metadata: { enquiryId: enquiry._id }
+                });
+            }
+        }
+
         res.json({ success: true, msg: 'Enquiry marked as resolved', enquiry });
     } catch (err) {
         console.error(err.message);
@@ -317,6 +349,19 @@ exports.replyToEnquiry = async (req, res) => {
 
         await enquiry.save();
         await enquiry.populate('responses.businessId', 'name');
+
+        // Notify User about the reply
+        if (enquiry.userId) {
+            await sendNotification({
+                recipientId: enquiry.userId,
+                senderId: req.user._id,
+                type: 'SYSTEM',
+                title: 'New Reply to Your Enquiry',
+                message: `${business.name} has responded to your enquiry.`,
+                link: `/profile/enquiries`, // Link to user's enquiry history
+                metadata: { enquiryId: enquiry._id, businessId: business._id }
+            });
+        }
 
         res.json({ success: true, msg: 'Reply sent', enquiry });
     } catch (err) {

@@ -22,6 +22,11 @@ const getArticles = async (req, res) => {
 
         let query = {};
 
+        // 0. Enforce Published status for public requests
+        if (!req.user || (req.user.role !== 'Admin' && req.user.role !== 'Developer')) {
+            query.status = 'published';
+        }
+
         // Apply filters
         if (status) query.status = status;
         if (category) query.category = category;
@@ -171,6 +176,12 @@ const getStaticPages = async (req, res) => {
         const { status, pageType } = req.query;
 
         let query = {};
+        
+        // 0. Enforce Published status for public requests
+        if (!req.user || (req.user.role !== 'Admin' && req.user.role !== 'Developer')) {
+            query.status = 'published';
+        }
+
         if (status) query.status = status;
         if (pageType) query.pageType = pageType;
 

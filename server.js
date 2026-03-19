@@ -7,7 +7,11 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
+const { initReportScheduler } = require('./utils/reportScheduler');
 const app = express();
+
+// Initialize internal schedulers
+initReportScheduler();
 
 const allowedOrigins = [
     'http://localhost:5173',
@@ -37,6 +41,27 @@ app.use('/api/categories', require('./routes/categories'));
 app.use('/api/companies', require('./routes/companies'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/me', require('./routes/userProfile'));
+app.use('/api/notifications', require('./routes/notifications'));
+
+// --- Background Jobs (Digests, etc.) ---
+const cron = require('node-cron');
+const { processDigests } = require('./services/digestService');
+
+// Weekly Digest: Every Monday at 9:00 AM
+cron.schedule('0 9 * * 1', () => {
+    processDigests('Weekly');
+});
+
+// Daily Digest: Every day at 8:00 AM
+cron.schedule('0 8 * * *', () => {
+    processDigests('Daily');
+});
+
+// Monthly Digest: 1st of every month at 10:00 AM
+cron.schedule('0 10 1 * *', () => {
+    processDigests('Monthly');
+});
 app.use('/api/upload', require('./routes/upload'));
 app.use('/api/locations', require('./routes/locationRoutes'));
 app.use('/api/dashboard', require('./routes/dashboard'));
@@ -62,6 +87,7 @@ app.use('/api/cms', require('./routes/cms'));
 app.use('/api/merchant', require('./routes/merchant'));
 app.use('/api/revenue',  require('./routes/revenue'));
 app.use('/api/ads',      require('./routes/ads'));
+app.use('/api/reports',  require('./routes/reports'));
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/fuerte_db';
 const PORT = process.env.PORT || 5000;

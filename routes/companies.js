@@ -1,6 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const { getAllCompanies, createCompany, updateCompany, deleteCompany, getCompanyBySlug, claimCompany, autocomplete } = require('../controllers/companyController');
+const { 
+    getAllCompanies, 
+    createCompany, 
+    updateCompany, 
+    deleteCompany, 
+    getCompanyBySlug, 
+    getCompanyById,
+    claimCompany, 
+    autocomplete,
+    getSimilarBusinesses,
+    getQuestions,
+    postQuestion
+} = require('../controllers/companyController');
 const { protect, attachOwnedBrands } = require('../middleware/authMiddleware');
 
 // @route   GET /api/companies/autocomplete
@@ -39,5 +51,17 @@ router.delete('/:id', protect, attachOwnedBrands, deleteCompany);
 
 // @route   POST /api/companies/:id/claim
 router.post('/:id/claim', protect, claimCompany);
+
+// @route   GET /api/companies/:id/similar
+router.get('/:id/similar', getSimilarBusinesses);
+
+// @route   GET /api/companies/:id/questions
+router.get('/:id/questions', getQuestions);
+
+// @route   POST /api/companies/:id/questions
+router.post('/:id/questions', protect, postQuestion);
+
+// @route   GET /api/companies/:id
+router.get('/:id', getCompanyById);
 
 module.exports = router;

@@ -176,6 +176,12 @@ const companySchema = new mongoose.Schema({
         saturday: { open: String, close: String, closed: Boolean },
         sunday: { open: String, close: String, closed: Boolean }
     },
+    priceRange: {
+        type: String,
+        enum: ['$', '$$', '$$$', '$$$$'],
+        default: '$$'
+    },
+    tags: [String],
     photos: [String],
     changeHistory: [
         {

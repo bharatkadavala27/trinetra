@@ -13,6 +13,164 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// ==================== ADMIN TEAM MANAGEMENT ====================
+
+// @desc    Create new admin operator
+// @route   POST /api/admin/users
+// @access  Private/Super Admin
+exports.createAdminUser = async (req, res) => {
+    try {
+        const { name, email, password, role, ipWhitelist } = req.body;
+
+        // Check if user already exists
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ success: false, msg: 'User with this email already exists' });
+        }
+
+        // Validate role - only allowing admin-level roles from RBACRole enum
+        const RBACRole = require('../models/RBACRole');
+        const roleExists = await RBACRole.findOne({ name: role });
+        if (!roleExists) {
+            return res.status(400).json({ success: false, msg: 'Invalid administrative role' });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password || Math.random().toString(36).slice(-12), salt);
+
+        // Process IP Whitelist if provided as string or array
+        let ipArray = [];
+        if (typeof ipWhitelist === 'string') {
+            ipArray = ipWhitelist.split(',').map(ip => ip.trim()).filter(ip => ip !== '');
+        } else if (Array.isArray(ipWhitelist)) {
+            ipArray = ipWhitelist;
+        }
+
+        user = await User.create({
+            name,
+            email,
+            password: hashedPassword,
+            role,
+            status: 'Active',
+            isEmailVerified: true, // Internal admins are pre-verified
+            ipWhitelist: ipArray,
+            lastAdminAction: {
+                action: 'Account Created',
+                by: req.user._id,
+                at: new Date()
+            }
+        });
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'ADMIN_CREATED',
+            targetType: 'User',
+            targetId: user._id,
+            notes: `New admin operator created: ${name} (${role})`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.status(201).json({
+            success: true,
+            msg: 'Admin operator provisioned successfully',
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status
+            }
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// @desc    Update admin operator profile
+// @route   PUT /api/admin/users/:id
+// @access  Private/Super Admin
+exports.updateAdminUser = async (req, res) => {
+    try {
+        const { name, email, role, status, ipWhitelist } = req.body;
+
+        let user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ success: false, msg: 'Admin operator not found' });
+        }
+
+        // Capture old state for audit
+        const before = {
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            ipWhitelist: user.ipWhitelist
+        };
+
+        // Update fields
+        if (name) user.name = name;
+        if (email) user.email = email;
+        if (role) user.role = role;
+        if (status) user.status = status;
+        
+        if (typeof ipWhitelist !== 'undefined') {
+            if (typeof ipWhitelist === 'string') {
+                user.ipWhitelist = ipWhitelist.split(',').map(ip => ip.trim()).filter(ip => ip !== '');
+            } else if (Array.isArray(ipWhitelist)) {
+                user.ipWhitelist = ipWhitelist;
+            }
+        }
+
+        user.lastAdminAction = {
+            action: 'Profile Updated',
+            by: req.user._id,
+            at: new Date()
+        };
+
+        await user.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'ADMIN_UPDATED',
+            targetType: 'User',
+            targetId: user._id,
+            changes: {
+                before,
+                after: {
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    status: user.status,
+                    ipWhitelist: user.ipWhitelist
+                }
+            },
+            notes: `Admin profile updated: ${user.name}`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.json({
+            success: true,
+            msg: 'Admin profile synchronized successfully',
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status
+            }
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
 // ==================== USER LIST & FILTERING ====================
 
 // @desc    Get all users with filters, search, and sorting
@@ -660,6 +818,39 @@ exports.exportUsersToCsv = async (req, res) => {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', 'attachment; filename="users_export.csv"');
         res.send(csv);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+// @desc    Force logout user (invalidate all active sessions)
+// @route   PUT /api/admin/users/:id/force-logout
+exports.forceLogout = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ success: false, msg: 'User not found' });
+        }
+
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        user.lastAdminAction = {
+            action: 'Forced Logout',
+            by: req.user._id,
+            at: new Date()
+        };
+        await user.save();
+
+        // Log audit
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'USER_FORCE_LOGOUT',
+            targetType: 'User',
+            targetId: user._id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.json({ success: true, msg: 'All active sessions for this user have been invalidated.' });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ success: false, msg: 'Server Error', error: err.message });

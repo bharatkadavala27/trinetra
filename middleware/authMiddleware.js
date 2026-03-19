@@ -28,6 +28,11 @@ exports.protect = async (req, res, next) => {
             return res.status(401).json({ msg: 'User no longer exists' });
         }
         
+        // Check if token version matches (for force logout)
+        if (typeof decoded.tokenVersion !== 'undefined' && decoded.tokenVersion !== user.tokenVersion) {
+            return res.status(401).json({ msg: 'Session invalidated. Please login again.' });
+        }
+        
         req.user = user;
             console.log('User attached to request:', user);
         next();
