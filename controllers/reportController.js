@@ -7,8 +7,10 @@ const Enquiry = require('../models/Enquiry');
 const Review = require('../models/Review');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const { Parser } = require('json2csv');
-const PdfPrinter = require('pdfmake/build/pdfmake');
-const vfsFonts = require('pdfmake/build/vfs_fonts');
+const pdfmake = require('pdfmake');
+// const vfsFonts = require('pdfmake/build/vfs_fonts'); // Not needed for Node.js with local fonts
+
+
 const path = require('path');
 const fs = require('fs');
 
@@ -24,19 +26,19 @@ const getDateRange = (startDate, endDate) => {
 // pdfmake fonts
 const fonts = {
     Roboto: {
-        normal: path.join(__dirname, '../fonts/Roboto-Regular.ttf'),
-        bold: path.join(__dirname, '../fonts/Roboto-Medium.ttf'),
-        italics: path.join(__dirname, '../fonts/Roboto-Italic.ttf'),
-        bolditalics: path.join(__dirname, '../fonts/Roboto-MediumItalic.ttf')
+        normal: path.join(__dirname, '../node_modules/pdfmake/fonts/Roboto/Roboto-Regular.ttf'),
+        bold: path.join(__dirname, '../node_modules/pdfmake/fonts/Roboto/Roboto-Medium.ttf'),
+        italics: path.join(__dirname, '../node_modules/pdfmake/fonts/Roboto/Roboto-Italic.ttf'),
+        bolditalics: path.join(__dirname, '../node_modules/pdfmake/fonts/Roboto/Roboto-MediumItalic.ttf')
     }
 };
 
-// Setup vfs fonts for pdfmake 0.3.x
-PdfPrinter.vfs = vfsFonts.pdfMake.vfs;
+// Setup fonts for the pdfmake instance
+pdfmake.setFonts(fonts);
 
-// Ensure fonts directory exists or use a fallback (In a real environment, fonts would be in the project)
-// For this environment, we'll try to provide a simple PDF or handle errors gracefully.
-const printer = new PdfPrinter(fonts);
+// Ensure fonts directory exists or use a fallback
+// const printer = new PdfPrinter(fonts); // In 0.3.x, pdfmake is already an instance
+
 
 // @desc    Get User Growth Report
 // @route   GET /api/reports/users

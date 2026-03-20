@@ -65,6 +65,16 @@ const companySchema = new mongoose.Schema({
         trim: true,
         lowercase: true
     },
+    website: {
+        type: String,
+        trim: true,
+        lowercase: true
+    },
+    whatsapp: {
+        type: String,
+        trim: true
+    },
+
     status: {
         type: String,
         enum: ['Pending', 'Approved', 'Rejected', 'Active', 'Inactive', 'Flagged', 'Suspended'],

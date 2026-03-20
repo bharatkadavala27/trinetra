@@ -1,34 +1,27 @@
-const mongoose = require('mongoose');
-const User = require('./models/User');
-const Company = require('./models/Company');
 require('dotenv').config();
+const mongoose = require('mongoose');
+const Company = require('./models/Company');
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/justdial';
-
-async function check() {
+async function checkBusiness() {
     try {
-        await mongoose.connect(MONGO_URI);
-        const user = await User.findOne({ email: 'test@gmail.comm' });
-        if (!user) {
-            console.log('User not found');
-            process.exit(1);
-        }
-        console.log('User ID:', user._id);
-        
-        const companies = await Company.find({ owner: user._id });
-        console.log('Owned Company IDs:', companies.map(c => c._id.toString()));
-        console.log('Owned Company Names:', companies.map(c => c.name));
-        
-        const allCompanies = await Company.find();
-        console.log('All Company Names & Owners:');
-        allCompanies.forEach(c => {
-            console.log(`- ${c.name} (Owner ID: ${c.owner})`);
-        });
+        await mongoose.connect(process.env.MONGO_URI);
+        console.log('Connected to MongoDB Atlas');
 
+        const testBusiness = await Company.findOne({ name: /Test Business/i });
+        if (testBusiness) {
+            console.log('SUCCESS: Found "Test Business" in DB:');
+            console.log(JSON.stringify(testBusiness, null, 2));
+        } else {
+            console.log('FAILURE: "Test Business" NOT found in DB.');
+            const lastThree = await Company.find().sort({ createdAt: -1 }).limit(3);
+            console.log('Last 3 businesses added:');
+            console.log(JSON.stringify(lastThree, null, 2));
+        }
         process.exit(0);
     } catch (err) {
-        console.error(err);
+        console.error('Error:', err);
         process.exit(1);
     }
 }
-check();
+
+checkBusiness();

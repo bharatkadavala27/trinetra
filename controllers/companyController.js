@@ -1,6 +1,13 @@
 const Company = require('../models/Company');
 const User = require('../models/User');
 const Category = require('../models/Category');
+const Country = require('../models/Country');
+const State = require('../models/State');
+const City = require('../models/City');
+const Area = require('../models/Area');
+const slugify = require('slugify');
+
+
 
 // @desc    Get all companies
 // @route   GET /api/companies
@@ -158,6 +165,83 @@ const createCompany = async (req, res) => {
         ['country_id', 'state_id', 'city_id', 'area_id', 'owner', 'latitude', 'longitude'].forEach(field => {
             if (body[field] === '') body[field] = null;
         });
+
+        // Handle cascading manual location entry (Country -> State -> City -> Area)
+        try {
+            // 1. Country
+            if (!body.country_id && body.manualCountry) {
+                let country = await Country.findOne({ 
+                    $or: [
+                        { name: new RegExp(`^${body.manualCountry}$`, 'i') },
+                        { code: body.manualCountryCode?.toUpperCase() }
+                    ]
+                });
+                if (!country && body.manualCountryCode) {
+                    country = await Country.create({ 
+                        name: body.manualCountry, 
+                        code: body.manualCountryCode.toUpperCase(),
+                        status: 'Active'
+                    });
+                }
+                if (country) body.country_id = country._id;
+            }
+
+            // 2. State
+            if (body.country_id && !body.state_id && body.manualState) {
+                let state = await State.findOne({ 
+                    country_id: body.country_id, 
+                    name: new RegExp(`^${body.manualState}$`, 'i') 
+                });
+                if (!state) {
+                    state = await State.create({ 
+                        country_id: body.country_id, 
+                        name: body.manualState,
+                        status: 'Active'
+                    });
+                }
+                if (state) body.state_id = state._id;
+            }
+
+            // 3. City
+            if (body.state_id && !body.city_id && body.manualCity) {
+                let city = await City.findOne({ 
+                    state_id: body.state_id, 
+                    name: new RegExp(`^${body.manualCity}$`, 'i') 
+                });
+                if (!city) {
+                    const citySlug = slugify(body.manualCity, { lower: true, strict: true });
+                    city = await City.create({ 
+                        state_id: body.state_id, 
+                        name: body.manualCity,
+                        slug: citySlug,
+                        status: 'Active'
+                    });
+                }
+                if (city) body.city_id = city._id;
+            }
+
+            // 4. Area
+            if (body.city_id && !body.area_id && body.manualArea) {
+                let area = await Area.findOne({ 
+                    city_id: body.city_id, 
+                    name: new RegExp(`^${body.manualArea}$`, 'i') 
+                });
+                if (!area) {
+                    const areaSlug = slugify(body.manualArea, { lower: true, strict: true });
+                    area = await Area.create({
+                        city_id: body.city_id,
+                        name: body.manualArea,
+                        slug: areaSlug,
+                        status: 'Active'
+                    });
+                }
+                if (area) body.area_id = area._id;
+            }
+        } catch (locErr) {
+            console.error('Error handling cascading manual location:', locErr);
+        }
+
+
 
         // For logged-in users, assign them as owner and ensure they are at least a Brand Owner
         if (req.user) {
