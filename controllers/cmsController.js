@@ -2,7 +2,8 @@ const Article = require('../models/Article');
 const StaticPage = require('../models/StaticPage');
 const Media = require('../models/Media');
 const FAQ = require('../models/FAQ');
-const cloudinary = require('../config/cloudinary');
+const Banner = require('../models/Banner');
+const { cloudinary } = require('../config/cloudinary');
 
 // ==================== ARTICLE MANAGEMENT ====================
 
@@ -535,6 +536,84 @@ const deleteFAQ = async (req, res) => {
     }
 };
 
+// ==================== BANNER MANAGEMENT ====================
+
+// Get all banners
+const getBanners = async (req, res) => {
+    try {
+        const { type, status } = req.query;
+        let query = {};
+        if (type) query.type = type;
+        if (status) query.status = status;
+
+        const banners = await Banner.find(query)
+            .populate('createdBy', 'name email')
+            .sort({ order: 1, createdAt: -1 });
+
+        res.json({ success: true, banners });
+    } catch (err) {
+        console.error('Error fetching banners:', err);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// Create banner
+const createBanner = async (req, res) => {
+    try {
+        const bannerData = {
+            ...req.body,
+            createdBy: req.user._id
+        };
+
+        const banner = new Banner(bannerData);
+        await banner.save();
+        await banner.populate('createdBy', 'name email');
+
+        res.status(201).json({ success: true, banner });
+    } catch (err) {
+        console.error('Error creating banner:', err);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// Update banner
+const updateBanner = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const banner = await Banner.findByIdAndUpdate(
+            id,
+            req.body,
+            { new: true, runValidators: true }
+        ).populate('createdBy', 'name email');
+
+        if (!banner) {
+            return res.status(404).json({ success: false, msg: 'Banner not found' });
+        }
+
+        res.json({ success: true, banner });
+    } catch (err) {
+        console.error('Error updating banner:', err);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// Delete banner
+const deleteBanner = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const banner = await Banner.findByIdAndDelete(id);
+
+        if (!banner) {
+            return res.status(404).json({ success: false, msg: 'Banner not found' });
+        }
+
+        res.json({ success: true, message: 'Banner deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting banner:', err);
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
 module.exports = {
     // Articles
     getArticles,
@@ -560,5 +639,11 @@ module.exports = {
     getPublishedFAQs,
     createFAQ,
     updateFAQ,
-    deleteFAQ
+    deleteFAQ,
+
+    // Banners
+    getBanners,
+    createBanner,
+    updateBanner,
+    deleteBanner
 };

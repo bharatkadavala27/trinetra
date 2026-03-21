@@ -16,7 +16,9 @@ const {
     exportUsersToCsv,
     forceLogout,
     createAdminUser,
-    updateAdminUser
+    updateAdminUser,
+    createUser,
+    updateUser
 } = require('../controllers/adminUserController');
 const ipWhitelist = require('../middleware/ipWhitelistMiddleware');
 const {
@@ -73,6 +75,8 @@ router.use(ipWhitelist);
 
 // ==================== USER MANAGEMENT ====================
 router.get('/users', authorize('Super Admin', 'Admin'), getAllUsersAdmin);
+router.post('/users/standard', authorize('Super Admin', 'Admin'), createUser);
+router.put('/users/standard/:id', authorize('Super Admin', 'Admin'), updateUser);
 router.post('/users', authorize('Super Admin'), createAdminUser);
 router.get('/users/:id', authorize('Super Admin', 'Admin'), getUserDetailAdmin);
 router.put('/users/:id', authorize('Super Admin'), updateAdminUser);

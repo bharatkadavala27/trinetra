@@ -26,7 +26,13 @@ const {
     getPublishedFAQs,
     createFAQ,
     updateFAQ,
-    deleteFAQ
+    deleteFAQ,
+
+    // Banners
+    getBanners,
+    createBanner,
+    updateBanner,
+    deleteBanner
 } = require('../controllers/cmsController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -52,7 +58,11 @@ const upload = multer({
     }
 });
 
-// All routes require authentication
+// ==================== PUBLIC ROUTES (No Auth Required) ====================
+// Public route for reading banners
+router.get('/banners/public', getBanners);
+
+// All routes below require authentication
 router.use(protect);
 
 // ==================== ARTICLE ROUTES ====================
@@ -94,5 +104,13 @@ router.delete('/faqs/:id', deleteFAQ);
 
 // Public route for reading FAQs
 router.get('/faqs/public/:category', getPublishedFAQs);
+
+// ==================== BANNER ROUTES ====================
+// Admin/Super Admin only
+router.use('/banners', authorize('Admin', 'Super Admin'));
+router.get('/banners', getBanners);
+router.post('/banners', createBanner);
+router.put('/banners/:id', updateBanner);
+router.delete('/banners/:id', deleteBanner);
 
 module.exports = router;

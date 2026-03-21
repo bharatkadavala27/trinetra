@@ -116,7 +116,7 @@ exports.updateAdminUser = async (req, res) => {
         if (email) user.email = email;
         if (role) user.role = role;
         if (status) user.status = status;
-        
+
         if (typeof ipWhitelist !== 'undefined') {
             if (typeof ipWhitelist === 'string') {
                 user.ipWhitelist = ipWhitelist.split(',').map(ip => ip.trim()).filter(ip => ip !== '');
@@ -171,6 +171,132 @@ exports.updateAdminUser = async (req, res) => {
     }
 };
 
+// ==================== STANDARD USER MANAGEMENT ====================
+
+// @desc    Create standard user (User, Merchant, Company Owner, Brand Owner)
+// @route   POST /api/admin/users/standard
+// @access  Private/Super Admin, Admin
+exports.createUser = async (req, res) => {
+    try {
+        const { name, email, password, role, mobileNumber, status, isEmailVerified, performanceScore } = req.body;
+
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ success: false, msg: 'User with this email already exists' });
+        }
+        
+        if (mobileNumber) {
+            let userByPhone = await User.findOne({ mobileNumber });
+            if (userByPhone) {
+                return res.status(400).json({ success: false, msg: 'User with this mobile number already exists' });
+            }
+        }
+
+        const validRoles = ['User', 'Merchant', 'Company Owner', 'Brand Owner'];
+        if (!validRoles.includes(role)) {
+            return res.status(400).json({ success: false, msg: 'Invalid regular user role' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password || Math.random().toString(36).slice(-12), salt);
+
+        user = await User.create({
+            name,
+            email,
+            password: hashedPassword,
+            mobileNumber: mobileNumber || undefined,
+            role,
+            status: status || 'Active',
+            isEmailVerified: isEmailVerified || false,
+            performanceScore: performanceScore !== undefined ? performanceScore : 100,
+            lastAdminAction: { action: 'Account Created', by: req.user._id, at: new Date() }
+        });
+
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'USER_CREATED',
+            targetType: 'User',
+            targetId: user._id,
+            notes: `New user created manually: ${name} (${role})`,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.status(201).json({ success: true, msg: 'User created successfully', user });
+    } catch (err) {
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
+// @desc    Update standard user profile
+// @route   PUT /api/admin/users/standard/:id
+// @access  Private/Super Admin, Admin
+exports.updateUser = async (req, res) => {
+    try {
+        const { name, email, role, status, mobileNumber, isEmailVerified, performanceScore, password } = req.body;
+
+        let user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ success: false, msg: 'User not found' });
+
+        const adminRoles = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer'];
+        if (adminRoles.includes(user.role)) {
+            return res.status(403).json({ success: false, msg: 'Please use the Admin Team manager to edit an admnistrative account' });
+        }
+
+        const validRoles = ['User', 'Merchant', 'Company Owner', 'Brand Owner'];
+        if (role && !validRoles.includes(role)) {
+            return res.status(400).json({ success: false, msg: 'Cannot elevate regular user to administrative role' });
+        }
+
+        const before = {
+            name: user.name, email: user.email, mobileNumber: user.mobileNumber,
+            role: user.role, status: user.status, isEmailVerified: user.isEmailVerified,
+            performanceScore: user.performanceScore
+        };
+
+        if (name) user.name = name;
+        if (email) user.email = email;
+        if (mobileNumber !== undefined) user.mobileNumber = mobileNumber === '' ? undefined : mobileNumber;
+        if (role) user.role = role;
+        if (status) user.status = status;
+        if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
+        if (performanceScore !== undefined) user.performanceScore = performanceScore;
+
+        let passwordChanged = false;
+        if (password && password.trim() !== '') {
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+            passwordChanged = true;
+        }
+
+        user.lastAdminAction = { action: 'Profile Updated', by: req.user._id, at: new Date() };
+
+        await user.save();
+
+        await AdminAuditLog.create({
+            adminId: req.user._id,
+            action: 'USER_UPDATED',
+            targetType: 'User',
+            targetId: user._id,
+            changes: {
+                before,
+                after: {
+                    name: user.name, email: user.email, mobileNumber: user.mobileNumber,
+                    role: user.role, status: user.status, isEmailVerified: user.isEmailVerified,
+                    performanceScore: user.performanceScore, ...(passwordChanged && { passwordChanged: true })
+                }
+            },
+            notes: `User profile updated: ${user.name}` + (passwordChanged ? ' (Password changed)' : ''),
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+
+        res.json({ success: true, msg: 'User profile updated successfully', user });
+    } catch (err) {
+        res.status(500).json({ success: false, msg: 'Server Error', error: err.message });
+    }
+};
+
 // ==================== USER LIST & FILTERING ====================
 
 // @desc    Get all users with filters, search, and sorting
@@ -178,12 +304,12 @@ exports.updateAdminUser = async (req, res) => {
 // @params  search, status, role, sortBy, page, limit, joinDateFrom, joinDateTo
 exports.getAllUsersAdmin = async (req, res) => {
     try {
-        const { 
-            search, 
-            status, 
-            role, 
-            sortBy = '-createdAt', 
-            page = 1, 
+        const {
+            search,
+            status,
+            role,
+            sortBy = '-createdAt',
+            page = 1,
             limit = 20,
             joinDateFrom,
             joinDateTo
@@ -404,9 +530,8 @@ exports.banUser = async (req, res) => {
                 from: process.env.EMAIL_USER,
                 to: user.email,
                 subject: 'Your Account Has Been Suspended',
-                html: `<h2>Account Suspended</h2><p>Your account has been suspended for the following reason: ${reason}</p>${
-                    duration === 'Temporary' ? `<p>Duration: ${tempDays} days</p>` : '<p>This is permanent.</p>'
-                }`
+                html: `<h2>Account Suspended</h2><p>Your account has been suspended for the following reason: ${reason}</p>${duration === 'Temporary' ? `<p>Duration: ${tempDays} days</p>` : '<p>This is permanent.</p>'
+                    }`
             };
             transporter.sendMail(mailOptions, (err) => {
                 if (err) console.error('Email send error:', err);
@@ -508,8 +633,8 @@ exports.forcePasswordReset = async (req, res) => {
             });
         }
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             msg: 'Password reset email sent to user',
             tempPassword: process.env.NODE_ENV === 'development' ? tempPassword : '****'
         });
@@ -642,7 +767,7 @@ exports.mergeAccounts = async (req, res) => {
         // Merge reviews and enquiries
         const Review = require('../models/Review');
         const Enquiry = require('../models/Enquiry');
-        
+
         await Review.updateMany({ userId: secondaryUserId }, { userId: primaryUserId });
         await Enquiry.updateMany({ userId: secondaryUserId }, { userId: primaryUserId });
 
@@ -764,7 +889,7 @@ exports.sendSystemMessage = async (req, res) => {
 
         // In-app message would be stored in a Message model
         // For now, just log the action
-        
+
         // Log audit
         await AdminAuditLog.create({
             adminId: req.user._id,
