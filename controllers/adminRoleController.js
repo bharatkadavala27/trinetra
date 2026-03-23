@@ -65,7 +65,11 @@ exports.createRole = async (req, res) => {
             auditLog: { read: false },
             analytics: { read: false },
             messaging: { read: false, write: false },
-            impersonation: { execute: false }
+            impersonation: { execute: false },
+            cmsManagement: { read: false, write: false, delete: false, approve: false },
+            visualManagement: { read: false, write: false, delete: false },
+            seoManagement: { read: false, write: false, delete: false },
+            reporting: { read: false, export: false }
         };
 
         if (baseRole) {

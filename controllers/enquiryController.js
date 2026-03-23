@@ -80,17 +80,42 @@ exports.createEnquiry = async (req, res) => {
         // Populate for response
         await enquiry.populate('businessIds', 'name email phone');
 
-        // Send auto-reply to user
+        // Send auto-reply acknowledgment to user
         if (enquiry.email) {
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: enquiry.email,
-                subject: 'We Received Your Enquiry',
-                html: `<h2>Enquiry Confirmation</h2><p>Thank you for your enquiry. We have received your message and will respond shortly.</p><p><strong>Reference ID:</strong> ${enquiry._id}</p>`
-            };
-            transporter.sendMail(mailOptions, (err) => {
-                if (err) console.error('Email send error:', err);
-            });
+            if (!process.env.EMAIL_USER) {
+                console.warn('⚠️  Auto-reply skipped: EMAIL_USER not configured in .env');
+            } else {
+                const businessNameList = businesses.map(b => `<li>${b.name}</li>`).join('');
+                const sentDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+                const mailOptions = {
+                    from: `"Engitech Expo" <${process.env.EMAIL_USER}>`,
+                    to: enquiry.email,
+                    subject: `✅ Enquiry Received – Ref #${enquiry._id.toString().slice(-6).toUpperCase()}`,
+                    html: `
+                        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc;padding:32px;border-radius:12px;">
+                            <h2 style="color:#1e293b;margin-bottom:4px">We received your enquiry!</h2>
+                            <p style="color:#64748b;margin-top:0">Hi <strong>${enquiry.name}</strong>, thank you for reaching out.</p>
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:20px 0;">
+                                <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em">Enquiry Reference</p>
+                                <p style="margin:0;font-size:20px;font-weight:bold;color:#f97316">#${enquiry._id.toString().slice(-6).toUpperCase()}</p>
+                                <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>
+                                <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em">Sent To</p>
+                                <ul style="margin:0;padding-left:20px;color:#1e293b">${businessNameList}</ul>
+                                <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>
+                                <p style="margin:0;color:#64748b;font-size:12px">Submitted on: ${sentDate}</p>
+                            </div>
+                            <p style="color:#64748b;font-size:13px">Businesses typically respond within <strong>24 hours</strong>. You can track replies at <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/profile/enquiries" style="color:#f97316">My Enquiries</a>.</p>
+                            <p style="color:#94a3b8;font-size:11px;margin-top:24px">This is an automated confirmation. Please do not reply to this email.</p>
+                        </div>
+                    `
+                };
+                try {
+                    await transporter.sendMail(mailOptions);
+                    console.log(`✅ Auto-reply sent to ${enquiry.email} for enquiry ${enquiry._id}`);
+                } catch (mailErr) {
+                    console.error(`❌ Auto-reply failed for enquiry ${enquiry._id}:`, mailErr.message);
+                }
+            }
         }
 
         // Send In-app & Multi-channel notifications to Managers of these businesses

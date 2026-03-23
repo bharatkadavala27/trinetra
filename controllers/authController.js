@@ -2,6 +2,8 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const generateToken = (id, role, name, email, tokenVersion = 0) => {
     return jwt.sign({ id, role, name, email, tokenVersion }, process.env.JWT_SECRET || 'fallback_secret', {
@@ -214,5 +216,174 @@ exports.resetPassword = async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Delete user account
+// @route   DELETE /api/auth/account
+// @access  Private
+exports.deleteAccount = async (req, res) => {
+    try {
+        await User.findByIdAndDelete(req.user.id);
+
+        res.json({
+            success: true,
+            msg: 'Account permanently deleted'
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Deactivate user account
+// @route   PUT /api/auth/deactivate
+// @access  Private
+exports.deactivateAccount = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        
+        user.status = 'Suspended';
+        user.banReason = 'Account deactivated by user';
+        // Invalidate all tokens by incrementing version
+        user.tokenVersion += 1;
+        
+        await user.save();
+
+        res.json({
+            success: true,
+            msg: 'Account deactivated and logged out from all devices'
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Get user's login history / sessions
+// @route   GET /api/auth/sessions
+// @access  Private
+exports.getSessions = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('loginHistory');
+        
+        res.json({
+            success: true,
+            sessions: user.loginHistory
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Revoke all sessions (except current is hard with JWT alone, so we revoke ALL)
+// @route   DELETE /api/auth/sessions
+// @access  Private
+exports.revokeAllSessions = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        
+        // Incrementing token version invalidates ALL current tokens in our protect middleware
+        user.tokenVersion += 1;
+        await user.save();
+
+        res.json({
+            success: true,
+            msg: 'All active sessions have been invalidated. Please login again.'
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Google OAuth Login
+// @route   POST /api/auth/google
+// @access  Public
+exports.googleLogin = async (req, res) => {
+    try {
+        const { tokenId } = req.body;
+
+        if (!tokenId) {
+            return res.status(400).json({ success: false, msg: 'ID Token is required' });
+        }
+
+        // Verify the token
+        let payload;
+        if (process.env.NODE_ENV === 'development' && tokenId === 'dev-google-token') {
+            payload = {
+                name: 'Test Google User',
+                email: 'google-test@example.com',
+                picture: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+                sub: '123456789'
+            };
+        } else {
+            const ticket = await client.verifyIdToken({
+                idToken: tokenId,
+                audience: process.env.GOOGLE_CLIENT_ID
+            });
+            payload = ticket.getPayload();
+        }
+
+        const { name, email, picture, sub } = payload;
+
+        // Check if user exists
+        let user = await User.findOne({ email });
+
+        if (user) {
+            // Check status
+            if (user.status === 'Suspended' || user.status === 'Banned') {
+                return res.status(403).json({ success: false, msg: `Account ${user.status.toLowerCase()}. Contact support.` });
+            }
+            
+            // Re-activate if was suspended by user deactivation
+            if (user.status === 'Suspended' && user.banReason === 'Account deactivated by user') {
+                user.status = 'Active';
+                user.banReason = undefined;
+            }
+
+            // Update login history
+            user.loginHistory.push({
+                device: req.headers['user-agent'],
+                ip: req.ip,
+                timestamp: new Date()
+            });
+            if (user.loginHistory.length > 10) user.loginHistory.shift();
+            
+            await user.save();
+        } else {
+            // Create new user (automatically verified since it's from Google)
+            user = await User.create({
+                name,
+                email,
+                profilePhoto: picture,
+                isEmailVerified: true,
+                status: 'Active',
+                password: crypto.randomBytes(16).toString('hex'), // Random password for OAuth users
+                loginHistory: [{
+                    device: req.headers['user-agent'],
+                    ip: req.ip,
+                    timestamp: new Date()
+                }]
+            });
+        }
+
+        const token = generateToken(user._id, user.role, user.name, user.email, user.tokenVersion);
+
+        res.json({
+            success: true,
+            token,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                profilePhoto: user.profilePhoto
+            }
+        });
+    } catch (err) {
+        console.error('Google Auth Error:', err.message);
+        res.status(401).json({ success: false, msg: 'Google Authentication failed' });
     }
 };

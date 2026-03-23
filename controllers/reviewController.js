@@ -1,4 +1,5 @@
 const Company = require('../models/Company');
+const Review = require('../models/Review');
 const { sendNotification } = require('../services/notificationService');
 
 // Helper to recalculate and update company rating
@@ -7,14 +8,25 @@ const recalculateCompanyRating = async (businessId) => {
     const company = await Company.findById(businessId);
     
     if (company) {
+        // Initialize distribution
+        const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        
         if (reviews.length > 0) {
             const reviewCount = reviews.length;
-            const avgRating = reviews.reduce((acc, item) => item.rating + acc, 0) / reviewCount;
-            company.rating = parseFloat(avgRating.toFixed(1));
+            const sumRating = reviews.reduce((acc, item) => {
+                // Update distribution
+                const r = Math.round(item.rating);
+                if (distribution[r] !== undefined) distribution[r]++;
+                return item.rating + acc;
+            }, 0);
+            
+            company.rating = parseFloat((sumRating / reviewCount).toFixed(1));
             company.reviewCount = reviewCount;
+            company.ratingDistribution = distribution;
         } else {
             company.rating = 0;
             company.reviewCount = 0;
+            company.ratingDistribution = distribution;
         }
         await company.save();
     }

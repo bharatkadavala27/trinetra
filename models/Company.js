@@ -52,6 +52,17 @@ const companySchema = new mongoose.Schema({
         type: Number,
         default: null
     },
+    location: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: {
+            type: [Number],
+            default: [0, 0]
+        }
+    },
     description: {
         type: String,
         trim: true
@@ -192,7 +203,13 @@ const companySchema = new mongoose.Schema({
         default: '$$'
     },
     tags: [String],
-    photos: [String],
+    ratingDistribution: {
+        1: { type: Number, default: 0 },
+        2: { type: Number, default: 0 },
+        3: { type: Number, default: 0 },
+        4: { type: Number, default: 0 },
+        5: { type: Number, default: 0 }
+    },
     changeHistory: [
         {
             field: String,
@@ -210,15 +227,25 @@ companySchema.pre('save', function (next) {
         this.slug = slugify(this.name, { lower: true, strict: true });
     }
     
-    // If owner is removed or explicitly unset, mark as unclaimed
+    // If owner is present, it MUST be claimed
     if (!this.owner) {
         this.claimed = false;
     } else {
-        // If owner is present, it MUST be claimed
         this.claimed = true;
+    }
+    
+    // Sync location GeoJSON field
+    if (typeof this.latitude === 'number' && typeof this.longitude === 'number') {
+        this.location = {
+            type: 'Point',
+            coordinates: [this.longitude, this.latitude] // MongoDB uses [lng, lat]
+        };
     }
     
     next();
 });
+
+// Index for Geospatial search
+companySchema.index({ location: '2dsphere' });
 
 module.exports = mongoose.model('Company', companySchema);

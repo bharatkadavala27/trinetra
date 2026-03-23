@@ -5,8 +5,7 @@ const rbacRoleSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-        trim: true,
-        enum: ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer']
+        trim: true
     },
     description: String,
     // Built-in roles cannot be modified
@@ -71,6 +70,10 @@ const rbacRoleSchema = new mongoose.Schema({
             read: { type: Boolean },
             write: { type: Boolean },
             delete: { type: Boolean }
+        },
+        reporting: {
+            read: { type: Boolean },
+            export: { type: Boolean }
         }
     }
 }, { timestamps: true });

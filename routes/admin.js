@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { protect, authorize, checkPermission } = require('../middleware/authMiddleware');
 const {
     getAllUsersAdmin,
     getUserDetailAdmin,
@@ -74,70 +74,70 @@ router.use(protect);
 router.use(ipWhitelist);
 
 // ==================== USER MANAGEMENT ====================
-router.get('/users', authorize('Super Admin', 'Admin'), getAllUsersAdmin);
-router.post('/users/standard', authorize('Super Admin', 'Admin'), createUser);
-router.put('/users/standard/:id', authorize('Super Admin', 'Admin'), updateUser);
-router.post('/users', authorize('Super Admin'), createAdminUser);
-router.get('/users/:id', authorize('Super Admin', 'Admin'), getUserDetailAdmin);
-router.put('/users/:id', authorize('Super Admin'), updateAdminUser);
-router.put('/users/:id/verify', authorize('Super Admin', 'Admin'), verifyUser);
-router.put('/users/:id/ban', authorize('Super Admin', 'Admin'), banUser);
-router.put('/users/:id/unban', authorize('Super Admin', 'Admin'), unbanUser);
-router.put('/users/:id/force-password-reset', authorize('Super Admin', 'Admin'), forcePasswordReset);
-router.put('/users/:id/force-logout', authorize('Super Admin'), forceLogout);
-router.post('/users/:id/impersonate', authorize('Super Admin'), impersonateUser);
-router.delete('/users/:id', authorize('Super Admin', 'Admin'), deleteOrAnonymizeUser);
-router.post('/users/merge', authorize('Super Admin'), mergeAccounts);
-router.post('/users/bulk-action', authorize('Super Admin', 'Admin'), bulkUserAction);
-router.post('/users/:id/message', authorize('Super Admin', 'Admin', 'Support'), sendSystemMessage);
-router.get('/users/export/csv', authorize('Super Admin', 'Admin'), exportUsersToCsv);
+router.get('/users', checkPermission('userManagement', 'read'), getAllUsersAdmin);
+router.post('/users/standard', checkPermission('userManagement', 'write'), createUser);
+router.put('/users/standard/:id', checkPermission('userManagement', 'write'), updateUser);
+router.post('/users', checkPermission('adminManagement', 'write'), createAdminUser);
+router.get('/users/:id', checkPermission('userManagement', 'read'), getUserDetailAdmin);
+router.put('/users/:id', checkPermission('adminManagement', 'write'), updateAdminUser);
+router.put('/users/:id/verify', checkPermission('userManagement', 'write'), verifyUser);
+router.put('/users/:id/ban', checkPermission('userManagement', 'write'), banUser);
+router.put('/users/:id/unban', checkPermission('userManagement', 'write'), unbanUser);
+router.put('/users/:id/force-password-reset', checkPermission('userManagement', 'write'), forcePasswordReset);
+router.put('/users/:id/force-logout', checkPermission('adminManagement', 'write'), forceLogout);
+router.post('/users/:id/impersonate', checkPermission('impersonation', 'execute'), impersonateUser);
+router.delete('/users/:id', checkPermission('userManagement', 'delete'), deleteOrAnonymizeUser);
+router.post('/users/merge', checkPermission('userManagement', 'write'), mergeAccounts);
+router.post('/users/bulk-action', checkPermission('userManagement', 'write'), bulkUserAction);
+router.post('/users/:id/message', checkPermission('messaging', 'write'), sendSystemMessage);
+router.get('/users/export/csv', checkPermission('reporting', 'export'), exportUsersToCsv);
 
 // ==================== LISTING MANAGEMENT ====================
-router.get('/listings', authorize('Super Admin', 'Admin', 'Moderator'), getAllListingsAdmin);
-router.get('/listings/:id', authorize('Super Admin', 'Admin', 'Moderator'), getListingDetailAdmin);
-router.put('/listings/:id/approve', authorize('Super Admin', 'Admin'), approveListing);
-router.put('/listings/:id/reject', authorize('Super Admin', 'Admin'), rejectListing);
-router.put('/listings/:id/request-info', authorize('Super Admin', 'Admin'), requestMoreInfo);
-router.put('/listings/:id/verify-badge', authorize('Super Admin', 'Admin'), verifyBusinessBadge);
-router.put('/listings/:id/flag', authorize('Super Admin', 'Admin', 'Moderator'), flagListing);
-router.put('/listings/:id/suspend', authorize('Super Admin', 'Admin'), suspendListing);
-router.delete('/listings/:id', authorize('Super Admin', 'Admin'), deleteListing);
-router.get('/listings/:id/check-duplicates', authorize('Super Admin', 'Admin'), checkDuplicates);
-router.post('/listings/bulk-action', authorize('Super Admin', 'Admin'), bulkListingAction);
-router.get('/listings/export/csv', authorize('Super Admin', 'Admin'), exportListingsCsv);
-router.get('/listings/:id/audit', authorize('Super Admin', 'Admin', 'Moderator'), getListingAuditTrail);
+router.get('/listings', checkPermission('listingManagement', 'read'), getAllListingsAdmin);
+router.get('/listings/:id', checkPermission('listingManagement', 'read'), getListingDetailAdmin);
+router.put('/listings/:id/approve', checkPermission('listingManagement', 'approve'), approveListing);
+router.put('/listings/:id/reject', checkPermission('listingManagement', 'approve'), rejectListing);
+router.put('/listings/:id/request-info', checkPermission('listingManagement', 'write'), requestMoreInfo);
+router.put('/listings/:id/verify-badge', checkPermission('listingManagement', 'write'), verifyBusinessBadge);
+router.put('/listings/:id/flag', checkPermission('listingManagement', 'write'), flagListing);
+router.put('/listings/:id/suspend', checkPermission('listingManagement', 'write'), suspendListing);
+router.delete('/listings/:id', checkPermission('listingManagement', 'delete'), deleteListing);
+router.get('/listings/:id/check-duplicates', checkPermission('listingManagement', 'read'), checkDuplicates);
+router.post('/listings/bulk-action', checkPermission('listingManagement', 'write'), bulkListingAction);
+router.get('/listings/export/csv', checkPermission('reporting', 'export'), exportListingsCsv);
+router.get('/listings/:id/audit', checkPermission('listingManagement', 'read'), getListingAuditTrail);
 
 // ==================== REVIEW MODERATION ====================
-router.get('/reviews', authorize('Super Admin', 'Admin', 'Moderator'), getAllReviewsAdmin);
-router.post('/reviews/bulk-action', authorize('Super Admin', 'Admin'), bulkReviewAction);
-router.put('/reviews/:id/note', authorize('Super Admin', 'Admin', 'Moderator'), addModerationNote);
+router.get('/reviews', checkPermission('reviewModeration', 'read'), getAllReviewsAdmin);
+router.post('/reviews/bulk-action', checkPermission('reviewModeration', 'write'), bulkReviewAction);
+router.put('/reviews/:id/note', checkPermission('reviewModeration', 'write'), addModerationNote);
 
 // ==================== ROLE MANAGEMENT ====================
-router.get('/roles', authorize('Super Admin', 'Admin'), getAllRoles);
-router.get('/roles/:id', authorize('Super Admin', 'Admin'), getRoleDetail);
-router.post('/roles', authorize('Super Admin'), createRole);
-router.put('/roles/:id', authorize('Super Admin'), updateRole);
-router.delete('/roles/:id', authorize('Super Admin'), deleteRole);
+router.get('/roles', checkPermission('roleManagement', 'read'), getAllRoles);
+router.get('/roles/:id', checkPermission('roleManagement', 'read'), getRoleDetail);
+router.post('/roles', checkPermission('roleManagement', 'write'), createRole);
+router.put('/roles/:id', checkPermission('roleManagement', 'write'), updateRole);
+router.delete('/roles/:id', checkPermission('roleManagement', 'delete'), deleteRole);
 
 // ==================== AUDIT LOGS ====================
-router.get('/audit-logs/export/csv', authorize('Super Admin', 'Finance'), exportAuditLogsCsv);
-router.get('/audit-logs', authorize('Super Admin', 'Admin', 'Finance'), getAuditLogs);
-router.get('/audit-logs/:id', authorize('Super Admin', 'Admin'), getAuditLogDetail);
-router.get('/audit-logs/report/by-action', authorize('Super Admin', 'Admin', 'Finance'), getAuditReportByAction);
-router.get('/audit-logs/report/by-admin', authorize('Super Admin', 'Finance'), getAuditReportByAdmin);
-router.get('/audit-logs/admin/:adminId/summary', authorize('Super Admin', 'Finance'), getAdminActivitySummary);
+router.get('/audit-logs/export/csv', checkPermission('reporting', 'export'), exportAuditLogsCsv);
+router.get('/audit-logs', checkPermission('auditLog', 'read'), getAuditLogs);
+router.get('/audit-logs/:id', checkPermission('auditLog', 'read'), getAuditLogDetail);
+router.get('/audit-logs/report/by-action', checkPermission('auditLog', 'read'), getAuditReportByAction);
+router.get('/audit-logs/report/by-admin', checkPermission('auditLog', 'read'), getAuditReportByAdmin);
+router.get('/audit-logs/admin/:adminId/summary', checkPermission('auditLog', 'read'), getAdminActivitySummary);
 
 // ==================== BROADCASTS & NOTIFICATIONS ====================
-router.get('/broadcasts/templates', authorize('Super Admin', 'Admin', 'Moderator'), getTemplates);
-router.post('/broadcasts/templates', authorize('Super Admin', 'Admin'), createTemplate);
-router.put('/broadcasts/templates/:id', authorize('Super Admin', 'Admin'), updateTemplate);
-router.delete('/broadcasts/templates/:id', authorize('Super Admin', 'Admin'), deleteTemplate);
+router.get('/broadcasts/templates', checkPermission('messaging', 'read'), getTemplates);
+router.post('/broadcasts/templates', checkPermission('messaging', 'write'), createTemplate);
+router.put('/broadcasts/templates/:id', checkPermission('messaging', 'write'), updateTemplate);
+router.delete('/broadcasts/templates/:id', checkPermission('messaging', 'write'), deleteTemplate);
 
-router.get('/broadcasts', authorize('Super Admin', 'Admin', 'Moderator'), getBroadcasts);
-router.get('/broadcasts/segments', authorize('Super Admin', 'Admin', 'Moderator'), getSegmentsData);
-router.post('/broadcasts', authorize('Super Admin', 'Admin'), createBroadcast);
-router.post('/broadcasts/:id/execute', authorize('Super Admin', 'Admin'), executeBroadcast);
-router.post('/broadcasts/:id/clone', authorize('Super Admin', 'Admin'), cloneBroadcast);
-router.delete('/broadcasts/:id', authorize('Super Admin', 'Admin'), deleteBroadcast);
+router.get('/broadcasts', checkPermission('messaging', 'read'), getBroadcasts);
+router.get('/broadcasts/segments', checkPermission('messaging', 'read'), getSegmentsData);
+router.post('/broadcasts', checkPermission('messaging', 'write'), createBroadcast);
+router.post('/broadcasts/:id/execute', checkPermission('messaging', 'write'), executeBroadcast);
+router.post('/broadcasts/:id/clone', checkPermission('messaging', 'write'), cloneBroadcast);
+router.delete('/broadcasts/:id', checkPermission('messaging', 'write'), deleteBroadcast);
 
 module.exports = router;

@@ -56,17 +56,55 @@ exports.attachOwnedBrands = async (req, res, next) => {
 exports.authorize = (...roles) => {
     return (req, res, next) => {
         if (!req.user || typeof req.user.role === 'undefined') {
-            console.error('authorize middleware: req.user or req.user.role is undefined', req.user);
-            return res.status(401).json({
-                msg: 'User not authenticated or role missing.'
-            });
+            return res.status(401).json({ msg: 'User not authenticated or role missing.' });
         }
+        // Super Admin always authorized for everything
+        if (req.user.role === 'Super Admin') return next();
+        
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
                 msg: `User role ${req.user.role} is not authorized to access this route`
             });
         }
         next();
+    };
+};
+
+/**
+ * Check if the user has a specific permission in their role
+ * @param {string} module - The name of the module (e.g., 'userManagement')
+ * @param {string} action - The action to perform (e.g., 'read', 'write', 'delete', 'approve', 'execute', 'export')
+ */
+exports.checkPermission = (module, action) => {
+    return async (req, res, next) => {
+        if (!req.user || !req.user.role) {
+            return res.status(401).json({ msg: 'Authentication required' });
+        }
+
+        // Super Admin has all permissions bypass
+        if (req.user.role === 'Super Admin') return next();
+
+        try {
+            const role = await RBACRole.findOne({ name: req.user.role });
+            
+            if (!role) {
+                return res.status(403).json({ msg: `Role '${req.user.role}' not found in system` });
+            }
+
+            const permissions = role.permissions || {};
+            const modulePermissions = permissions[module] || {};
+            
+            if (modulePermissions[action] === true) {
+                return next();
+            }
+
+            return res.status(403).json({ 
+                msg: `Access Denied: You do not have '${action}' permission for '${module}'` 
+            });
+        } catch (err) {
+            console.error('RBAC Error:', err);
+            return res.status(500).json({ msg: 'Authorization system error' });
+        }
     };
 };
 

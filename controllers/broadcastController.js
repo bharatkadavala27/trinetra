@@ -235,7 +235,11 @@ exports.executeBroadcast = async (req, res) => {
 exports.getSegmentsData = async (req, res) => {
     try {
         const cities = await User.distinct('city', { city: { $ne: null } });
-        const roles = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer', 'Brand Owner', 'Merchant', 'User'];
+        const RBACRole = require('../models/RBACRole');
+        const adminRoles = await RBACRole.find().select('name');
+        const adminRoleNames = adminRoles.map(r => r.name);
+        
+        const roles = [...new Set([...adminRoleNames, 'Company Owner', 'Brand Owner', 'Merchant', 'User'])];
         res.json({ success: true, cities, roles });
     } catch (err) {
         res.status(500).json({ success: false, msg: 'Server Error' });

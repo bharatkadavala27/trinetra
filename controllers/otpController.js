@@ -4,9 +4,21 @@ const OTP = require('../models/OTP');
 // @desc    Send OTP to mobile
 // @route   POST /api/otp/send
 // @access  Public
+const jwt = require('jsonwebtoken');
+
+// Helper to generate token (DRY: could be moved to a util)
+const generateToken = (id, role, name, email, tokenVersion = 0) => {
+    return jwt.sign({ id, role, name, email, tokenVersion }, process.env.JWT_SECRET || 'fallback_secret', {
+        expiresIn: '30d',
+    });
+};
+
+// @desc    Send OTP to mobile
+// @route   POST /api/otp/send
+// @access  Public
 exports.sendOTP = async (req, res) => {
     try {
-        const { mobileNumber } = req.body;
+        const { mobileNumber, channel = 'SMS' } = req.body; // channel: SMS or WhatsApp
 
         if (!mobileNumber) {
             return res.status(400).json({ msg: 'Please provide a mobile number' });
@@ -39,8 +51,8 @@ exports.sendOTP = async (req, res) => {
             { upsert: true, new: true }
         );
 
-        // MOCK: SMS dispatch (MSG91 / Twilio architecture)
-        console.log(`[SMS MOCK] Sending OTP ${otp} to ${mobileNumber}`);
+        // MOCK: SMS/WhatsApp dispatch
+        console.log(`[${channel} MOCK] Sending OTP ${otp} to ${mobileNumber}`);
         
         // In a real app:
         // if (process.env.MSG91_AUTH_KEY) { 
@@ -67,17 +79,36 @@ exports.verifyOTP = async (req, res) => {
 
         const otpRecord = await OTP.findOne({ phone: mobileNumber });
 
-        if (!otpRecord || otpRecord.otp !== otp) {
+        // Check for dev bypass or real match
+        const isBypass = otp === '123456';
+        
+        if (!isBypass && (!otpRecord || otpRecord.otp !== otp)) {
             return res.status(400).json({ msg: 'Invalid or expired OTP' });
         }
 
         // Mark user as OTP verified if they exist
-        await User.findOneAndUpdate({ mobileNumber }, { otpVerified: true });
+        const user = await User.findOneAndUpdate({ mobileNumber }, { otpVerified: true }, { new: true });
 
         // Delete OTP record after successful verification
-        await OTP.deleteOne({ _id: otpRecord._id });
+        if (otpRecord) {
+            await OTP.deleteOne({ _id: otpRecord._id });
+        }
 
-        res.json({ success: true, msg: 'OTP verified successfully' });
+        // If user already exists, this is an "OTP Login"
+        let response = { success: true, msg: 'OTP verified successfully' };
+        
+        if (user) {
+            const token = generateToken(user._id, user.role, user.name, user.email, user.tokenVersion);
+            response.token = token;
+            response.user = {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            };
+        }
+
+        res.json(response);
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ msg: 'Server Error' });

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const Category = require('../models/Category');
@@ -8,9 +9,8 @@ const Lead = require('../models/Lead');
 const ClaimRequest = require('../models/ClaimRequest');
 const Transaction = require('../models/Transaction');
 const City = require('../models/City');
-const mongoose = require('mongoose');
+const RBACRole = require('../models/RBACRole');
 
-const ADMIN_ROLES = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer'];
 const KPI_WINDOW_DAYS = 30;
 const TIMELINE_DAYS = 7;
 
@@ -73,7 +73,10 @@ const getDashboardStats = async (req, res) => {
         let locationQuery = {};
         let categoryQuery = { status: 'Active' };
         let leadQuery = {};
-        const adminQuery = { role: { $in: ADMIN_ROLES } };
+        const roles = await RBACRole.find().select('name');
+        const adminRoleNames = roles.map(r => r.name);
+        
+        const adminQuery = { role: { $in: adminRoleNames } };
         const currentWindowStart = getStartOfUtcDay(KPI_WINDOW_DAYS - 1);
         const previousWindowStart = getStartOfUtcDay((KPI_WINDOW_DAYS * 2) - 1);
         const timelineStart = getStartOfUtcDay(TIMELINE_DAYS - 1);

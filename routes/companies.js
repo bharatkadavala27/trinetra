@@ -61,6 +61,12 @@ router.get('/:id/questions', getQuestions);
 // @route   POST /api/companies/:id/questions
 router.post('/:id/questions', protect, postQuestion);
 
+// @route   POST /api/companies/:id/report
+router.post('/:id/report', protect, (req, res, next) => {
+    const { reportCompany } = require('../controllers/companyController');
+    reportCompany(req, res, next);
+});
+
 // @route   GET /api/companies/:id
 router.get('/:id', getCompanyById);
 

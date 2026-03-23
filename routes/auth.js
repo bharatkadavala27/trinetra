@@ -1,5 +1,17 @@
 const express = require('express');
-const { register, login, getMe, verifyEmail, forgotPassword, resetPassword } = require('../controllers/authController');
+const { 
+    register, 
+    login, 
+    getMe, 
+    verifyEmail, 
+    forgotPassword, 
+    resetPassword,
+    deleteAccount,
+    deactivateAccount,
+    getSessions,
+    revokeAllSessions,
+    googleLogin
+} = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -10,5 +22,14 @@ router.get('/me', protect, getMe);
 router.get('/verify/:token', verifyEmail);
 router.post('/forgotpassword', forgotPassword);
 router.put('/resetpassword/:token', resetPassword);
+
+// OAuth
+router.post('/google', googleLogin);
+
+// Account & Session Management
+router.delete('/account', protect, deleteAccount);
+router.put('/deactivate', protect, deactivateAccount);
+router.get('/sessions', protect, getSessions);
+router.delete('/sessions', protect, revokeAllSessions);
 
 module.exports = router;

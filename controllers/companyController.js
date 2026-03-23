@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const User = require('../models/User');
 const Category = require('../models/Category');
@@ -20,38 +21,85 @@ const getAllCompanies = async (req, res) => {
         } = req.query;
         
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        let query = {};
+        const parsedLimit = parseInt(limit);
+        
+        let matchQuery = {};
         
         // 0. Enforce Approved status for public listings
-        // (Admins can toggle this or use the admin route, but public frontend should only see Approved)
         if (!req.user || (req.user.role !== 'Admin' && req.user.role !== 'Developer')) {
-            query.status = 'Approved';
+            matchQuery.status = 'Approved';
         }
 
-        // 1. Initial Location / Featured filters
-        if (city) query.city_id = city;
-        if (area) query.area_id = area;
-        if (categoryId) query.category_id = categoryId;
+        const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+        // 1. Basic Filters
+        if (city && isValidObjectId(city)) matchQuery.city_id = new mongoose.Types.ObjectId(city);
+        if (area && isValidObjectId(area)) matchQuery.area_id = new mongoose.Types.ObjectId(area);
+        if (categoryId && isValidObjectId(categoryId)) matchQuery.category_id = new mongoose.Types.ObjectId(categoryId);
         if (isFeatured !== undefined || featured !== undefined) {
-            query.isFeatured = (isFeatured === 'true' || featured === 'true');
+            matchQuery.isFeatured = (isFeatured === 'true' || featured === 'true');
         }
-        if (priceRange) query.priceRange = priceRange;
-        if (rating) query.rating = { $gte: parseFloat(rating) };
+        if (priceRange) matchQuery.priceRange = priceRange;
+        if (rating) matchQuery.rating = { $gte: parseFloat(rating) };
 
-        // 2. Fetch base companies matching filters
-        let companies = await Company.find(query)
-            .populate('country_id', 'name slug')
-            .populate('city_id', 'name slug')
-            .populate('state_id', 'name slug')
-            .populate('area_id', 'name slug')
-            .populate('owner', 'name email role')
-            .lean(); 
+        // 2. Search Query (Text search)
+        if (q) {
+            matchQuery.$or = [
+                { name: { $regex: q, $options: 'i' } },
+                { description: { $regex: q, $options: 'i' } },
+                { tags: { $in: [new RegExp(q, 'i')] } }
+            ];
+        }
 
+        let pipeline = [];
+
+        // 3. Geospatial Sort (must be first stage)
+        if (sort === 'distance' && lat && lng) {
+            pipeline.push({
+                $geoNear: {
+                    near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+                    distanceField: "distance",
+                    spherical: true,
+                    query: matchQuery
+                }
+            });
+        } else {
+            pipeline.push({ $match: matchQuery });
+            
+            // Initial Sort if not distance
+            if (sort === 'latest') pipeline.push({ $sort: { createdAt: -1 } });
+            else if (sort === 'rating') pipeline.push({ $sort: { rating: -1 } });
+            else if (sort === 'reviews') pipeline.push({ $sort: { reviewCount: -1 } });
+            else {
+                // Default Ranking (Premium First, then manualRank, then rating)
+                pipeline.push({ $sort: { isFeatured: -1, manualRank: -1, rating: -1 } });
+            }
+        }
+
+        // 4. Pagination & Count
+        const countPipeline = [...pipeline, { $count: "total" }];
+        const countResult = await Company.aggregate(countPipeline);
+        const total = countResult.length > 0 ? countResult[0].total : 0;
+
+        pipeline.push({ $skip: skip });
+        pipeline.push({ $limit: parsedLimit });
+
+        // 5. Lookup relations
+        pipeline.push(
+            { $lookup: { from: 'cities', localField: 'city_id', foreignField: '_id', as: 'city_id' } },
+            { $unwind: { path: '$city_id', preserveNullAndEmptyArrays: true } },
+            { $lookup: { from: 'areas', localField: 'area_id', foreignField: '_id', as: 'area_id' } },
+            { $unwind: { path: '$area_id', preserveNullAndEmptyArrays: true } }
+        );
+
+        let companies = await Company.aggregate(pipeline);
+
+        // 6. Associate Items (Products/Services) 
+        // We do this after main pagination to keep it fast
         const Product = require('../models/Product');
         const Service = require('../models/Service');
         const companyIds = companies.map(c => c._id);
 
-        // 3. Associate items
         const [allProducts, allServices] = await Promise.all([
             Product.find({ listingId: { $in: companyIds } }).lean(),
             Service.find({ listingId: { $in: companyIds } }).lean()
@@ -71,78 +119,14 @@ const getAllCompanies = async (req, res) => {
             servicesByCompany[cid].push(s);
         });
 
-        companies = companies.map(company => {
-            company.products = productsByCompany[company._id.toString()] || [];
-            company.services = servicesByCompany[company._id.toString()] || [];
-            return company;
-        });
-
-        // 4. Advanced Filters (Post-fetch processing)
-        if (q) {
-            const regex = new RegExp(q, 'i');
-            companies = companies.filter(company => 
-                regex.test(company.name) || 
-                regex.test(company.description) ||
-                company.tags?.some(tag => regex.test(tag)) ||
-                company.products.some(p => regex.test(p.name)) ||
-                company.services.some(s => regex.test(s.name))
-            );
-        }
-
-        if (openNow === 'true') {
-            const now = new Date();
-            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const dayName = days[now.getDay()];
-            const currentTime = now.getHours() * 60 + now.getMinutes();
-
-            companies = companies.filter(c => {
-                const hours = c.businessHours?.[dayName];
-                if (!hours || hours.closed) return false;
-                
-                const [oH, oM] = hours.open.split(':').map(Number);
-                const [cH, cM] = hours.close.split(':').map(Number);
-                const openTime = oH * 60 + oM;
-                const closeTime = cH * 60 + cM;
-                
-                return currentTime >= openTime && currentTime <= closeTime;
-            });
-        }
-
-        // 5. Ranking & Distance Calculation
-        const Setting = require('../models/Setting');
-        const siteSettings = await Setting.findOne().lean();
-        const weights = siteSettings?.rankingWeights || { reviews: 1.0, distance: 1.0, responseTime: 1.0, premium: 1.5 };
-
-        companies = companies.map(c => {
-            let score = 0;
-            let distance = null;
-
-            if (lat && lng && c.latitude && c.longitude) {
-                // simple Euclidean for demonstration, could use Haversine
-                distance = Math.sqrt(Math.pow(c.latitude - lat, 2) + Math.pow(c.longitude - lng, 2));
-                score -= (distance * 10 * weights.distance); 
-            }
-
-            if (c.rating) score += (c.rating * weights.reviews);
-            if (c.isFeatured) score += (10 * weights.premium);
-            score += (c.manualRank || 0) * 100;
-
-            return { ...c, rankScore: score, distance };
-        });
-
-        // 6. Final Sort
-        if (sort === 'rating') companies.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-        else if (sort === 'reviews') companies.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
-        else if (sort === 'latest') companies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        else if (sort === 'distance' && lat && lng) companies.sort((a, b) => a.distance - b.distance);
-        else companies.sort((a, b) => b.rankScore - a.rankScore);
-
-        // 7. Pagination
-        const total = companies.length;
-        const paginatedCompanies = companies.slice(skip, skip + parseInt(limit));
+        companies = companies.map(company => ({
+            ...company,
+            products: productsByCompany[company._id.toString()] || [],
+            services: servicesByCompany[company._id.toString()] || []
+        }));
 
         res.json({
-            data: paginatedCompanies,
+            data: companies,
             pagination: {
                 total,
                 page: parseInt(page),
@@ -151,8 +135,8 @@ const getAllCompanies = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ msg: 'Server Error' });
+        console.error('GetAllCompanies Error:', err.message);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 };
 
@@ -545,7 +529,6 @@ const postQuestion = async (req, res) => {
         res.status(500).send('Server Error');
     }
 };
-
 const getCompanyById = async (req, res) => {
     try {
         const company = await Company.findById(req.params.id)
@@ -554,6 +537,34 @@ const getCompanyById = async (req, res) => {
             .populate('area_id', 'name slug');
         if (!company) return res.status(404).json({ msg: 'Company not found' });
         res.json(company);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+};
+
+// @desc    Report a business
+// @route   POST /api/companies/:id/report
+const reportCompany = async (req, res) => {
+    try {
+        const FraudAlert = require('../models/FraudAlert');
+        const { reason, description } = req.body;
+
+        const report = new FraudAlert({
+            type: 'listing',
+            severity: 'medium',
+            reason,
+            description,
+            targetId: req.params.id,
+            targetModel: 'Company',
+            metadata: {
+                ipAddress: req.ip,
+                userAgent: req.get('user-agent')
+            }
+        });
+
+        await report.save();
+        res.status(201).json({ success: true, msg: 'Report submitted successfully' });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -571,5 +582,6 @@ module.exports = {
     autocomplete,
     getSimilarBusinesses,
     getQuestions,
-    postQuestion
+    postQuestion,
+    reportCompany
 };

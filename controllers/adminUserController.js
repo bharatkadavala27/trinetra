@@ -238,9 +238,12 @@ exports.updateUser = async (req, res) => {
         let user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ success: false, msg: 'User not found' });
 
-        const adminRoles = ['Super Admin', 'Admin', 'Moderator', 'Finance', 'Support', 'Viewer'];
+        const RBACRole = require('../models/RBACRole');
+        const adminRolesList = await RBACRole.find().select('name');
+        const adminRoles = adminRolesList.map(r => r.name);
+        
         if (adminRoles.includes(user.role)) {
-            return res.status(403).json({ success: false, msg: 'Please use the Admin Team manager to edit an admnistrative account' });
+            return res.status(403).json({ success: false, msg: 'Please use the Admin Team manager to edit an administrative account' });
         }
 
         const validRoles = ['User', 'Merchant', 'Company Owner', 'Brand Owner'];
