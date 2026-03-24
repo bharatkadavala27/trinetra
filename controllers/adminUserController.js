@@ -417,11 +417,18 @@ exports.getUserDetailAdmin = async (req, res) => {
             .sort({ createdAt: -1 });
 
         // Stats summary
+        const lastLogin = user.loginHistory.length > 0 ? user.loginHistory[user.loginHistory.length - 1] : null;
         const stats = {
             totalReviews: await Review.countDocuments({ userId: user._id }),
             totalEnquiries: await Enquiry.countDocuments({ userId: user._id }),
-            lastActive: user.loginHistory.length > 0 ? user.loginHistory[user.loginHistory.length - 1].timestamp : user.updatedAt
+            lastActive: lastLogin ? lastLogin.timestamp : user.updatedAt,
+            lastIp: lastLogin ? lastLogin.ip : null
         };
+
+        // If user location is empty, try to provide a hint from last login
+        if (!user.location && lastLogin && lastLogin.ip) {
+            user.location = `Last login from IP: ${lastLogin.ip}`;
+        }
 
         res.json({
             success: true,

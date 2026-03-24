@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const OTP = require('../models/OTP');
+const { sendSMS, sendWhatsApp } = require('../utils/sms');
 
 // @desc    Send OTP to mobile
 // @route   POST /api/otp/send
@@ -51,13 +52,14 @@ exports.sendOTP = async (req, res) => {
             { upsert: true, new: true }
         );
 
-        // MOCK: SMS/WhatsApp dispatch
-        console.log(`[${channel} MOCK] Sending OTP ${otp} to ${mobileNumber}`);
-        
-        // In a real app:
-        // if (process.env.MSG91_AUTH_KEY) { 
-        //    await sendSMS(mobileNumber, otp); 
-        // }
+        // SMS / WhatsApp dispatch
+        const message = `Your Fuerte verification code is: ${otp}. Valid for 10 minutes.`;
+
+        if (channel === 'WhatsApp') {
+            await sendWhatsApp(mobileNumber, message);
+        } else {
+            await sendSMS(mobileNumber, message);
+        }
 
         res.json({ success: true, msg: 'OTP sent successfully' });
     } catch (err) {

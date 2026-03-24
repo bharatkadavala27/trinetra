@@ -13,6 +13,9 @@ const app = express();
 // Initialize internal schedulers
 initReportScheduler();
 
+console.log('🌍 NODE_ENV:', process.env.NODE_ENV);
+console.log('🔑 JWT_SECRET loaded:', !!process.env.JWT_SECRET);
+
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',

@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { createLead, getLeads, updateLeadStatus, addNote, assignLead, getLeadStats } = require('../controllers/leadController');
+const { createLead, getLeads, getUserLeads, updateLeadStatus, addNote, assignLead, getLeadStats } = require('../controllers/leadController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
 // Public: Create a new lead (enquiry)
 router.post('/', createLead);
+
+// User: Get their own leads
+router.get('/my-leads', protect, getUserLeads);
 
 // Admin: Get analytics stats
 router.get('/stats', protect, admin, getLeadStats);

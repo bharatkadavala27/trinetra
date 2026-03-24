@@ -2,6 +2,8 @@ const Lead = require('../models/Lead');
 const Company = require('../models/Company');
 const User = require('../models/User');
 const sendEmail = require('../utils/email');
+const { sendSMS } = require('../utils/sms');
+const { sendPushNotification } = require('../utils/push');
 
 // Create a new lead (enquiry)
 exports.createLead = async (req, res) => {
@@ -92,6 +94,26 @@ exports.getLeads = async (req, res) => {
     }
 };
 
+// Get user's leads
+exports.getUserLeads = async (req, res) => {
+    try {
+        const leads = await Lead.find({ 
+            $or: [
+                { userId: req.user._id },
+                { phone: req.user.phone }, // fallback for leads submitted by phone number before login
+                { email: req.user.email }
+            ]
+        })
+        .sort({ createdAt: -1 })
+        .populate('business', 'name slug');
+
+        res.json({ success: true, leads });
+    } catch (err) {
+        console.error('Get User Leads Error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 // Update lead status/priority/followUp (admin)
 exports.updateLeadStatus = async (req, res) => {
     try {
@@ -140,6 +162,29 @@ exports.updateLeadStatus = async (req, res) => {
         }
 
         await lead.save();
+
+        // 3. User Notifications (Push & SMS) on status change
+        if (status && lead.phone) {
+            const statusMsg = `Update: Your enquiry for ${lead.category} is now "${status}".`;
+            
+            // Send SMS
+            await sendSMS(lead.phone, statusMsg);
+
+            // Send Push if user is registered and has token
+            const enquiryUser = await User.findOne({ 
+                $or: [{ mobileNumber: lead.phone }, { email: lead.email }] 
+            }).select('fcmToken');
+
+            if (enquiryUser?.fcmToken) {
+                await sendPushNotification(
+                    enquiryUser.fcmToken, 
+                    'Enquiry Status Update', 
+                    statusMsg,
+                    { leadId: lead._id.toString() }
+                );
+            }
+        }
+
         res.json({ success: true, lead });
     } catch (err) {
         console.error('Update Lead Error:', err.message);

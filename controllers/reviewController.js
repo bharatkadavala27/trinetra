@@ -1,4 +1,5 @@
 const Company = require('../models/Company');
+const User = require('../models/User');
 const Review = require('../models/Review');
 const { sendNotification } = require('../services/notificationService');
 
@@ -108,6 +109,9 @@ exports.addReview = async (req, res) => {
                 metadata: { reviewId: review._id, businessId: company._id }
             });
         }
+
+        // Update user review stats
+        await User.findByIdAndUpdate(req.user.id, { $inc: { reviewCount: 1 } });
 
         res.status(201).json(review);
     } catch (err) {
@@ -338,6 +342,11 @@ exports.deleteReview = async (req, res) => {
         // Recalculate company rating if deleted review was approved
         if (wasApproved) {
             await recalculateCompanyRating(businessId);
+        }
+
+        // Update user review stats
+        if (review.userId) {
+            await User.findByIdAndUpdate(review.userId, { $inc: { reviewCount: -1 } });
         }
 
         res.json({ msg: 'Review removed' });

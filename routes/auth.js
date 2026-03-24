@@ -10,7 +10,8 @@ const {
     deactivateAccount,
     getSessions,
     revokeAllSessions,
-    googleLogin
+    googleLogin,
+    facebookLogin
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -25,6 +26,7 @@ router.put('/resetpassword/:token', resetPassword);
 
 // OAuth
 router.post('/google', googleLogin);
+router.post('/facebook', facebookLogin);
 
 // Account & Session Management
 router.delete('/account', protect, deleteAccount);

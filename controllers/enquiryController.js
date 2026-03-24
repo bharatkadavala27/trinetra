@@ -3,6 +3,8 @@ const User = require('../models/User');
 const Company = require('../models/Company');
 const nodemailer = require('nodemailer');
 const { sendNotification } = require('../services/notificationService');
+const { sendSMS } = require('../utils/sms');
+const { sendPushNotification } = require('../utils/push');
 
 // Configure nodemailer
 const transporter = nodemailer.createTransport({
@@ -122,9 +124,9 @@ exports.createEnquiry = async (req, res) => {
         for (const business of businesses) {
             if (business.owner) {
                 await sendNotification({
-                    recipientId: business.owner,
-                    senderId: req.user ? req.user._id : null,
-                    type: 'SYSTEM',
+                    recipient: business.owner,
+                    sender: req.user ? req.user._id : null,
+                    type: 'System',
                     title: 'New Enquiry Received',
                     message: `${name} sent a new enquiry for ${business.name}`,
                     link: `/merchant/leads/${enquiry._id}`,
@@ -135,6 +137,11 @@ exports.createEnquiry = async (req, res) => {
 
         // Send to merchant inbox (would integrate with lead system)
         // For now, just mark status as available for merchant to see
+
+        // Update user enquiry stats
+        if (req.user) {
+            await User.findByIdAndUpdate(req.user._id, { $inc: { enquiryCount: 1 } });
+        }
 
         res.status(201).json({
             success: true,
@@ -230,6 +237,11 @@ exports.deleteEnquiry = async (req, res) => {
         enquiry.deletedAt = new Date();
         await enquiry.save();
 
+        // Update user enquiry stats
+        if (enquiry.userId) {
+            await User.findByIdAndUpdate(enquiry.userId, { $inc: { enquiryCount: -1 } });
+        }
+
         res.json({ success: true, msg: 'Enquiry deleted' });
     } catch (err) {
         console.error(err.message);
@@ -261,9 +273,9 @@ exports.resolveEnquiry = async (req, res) => {
             const business = await Company.findById(businessId);
             if (business && business.owner) {
                 await sendNotification({
-                    recipientId: business.owner,
-                    senderId: req.user._id,
-                    type: 'SYSTEM',
+                    recipient: business.owner,
+                    sender: req.user._id,
+                    type: 'System',
                     title: 'Enquiry Resolved',
                     message: `Enquiry #${enquiry._id.toString().slice(-6)} has been marked as resolved by the user.`,
                     link: `/merchant/leads/${enquiry._id}`,
@@ -378,14 +390,33 @@ exports.replyToEnquiry = async (req, res) => {
         // Notify User about the reply
         if (enquiry.userId) {
             await sendNotification({
-                recipientId: enquiry.userId,
-                senderId: req.user._id,
-                type: 'SYSTEM',
+                recipient: enquiry.userId,
+                sender: req.user._id,
+                type: 'System',
                 title: 'New Reply to Your Enquiry',
                 message: `${business.name} has responded to your enquiry.`,
                 link: `/profile/enquiries`, // Link to user's enquiry history
                 metadata: { enquiryId: enquiry._id, businessId: business._id }
             });
+
+            // Send Push via FCM if token exists
+            const userWithToken = await User.findById(enquiry.userId).select('fcmToken');
+            if (userWithToken?.fcmToken) {
+                await sendPushNotification(
+                    userWithToken.fcmToken,
+                    'New Reply Received',
+                    `${business.name} has responded to your enquiry.`,
+                    { enquiryId: enquiry._id.toString() }
+                );
+            }
+        }
+
+        // Send SMS to user
+        if (enquiry.phone) {
+            await sendSMS(
+                enquiry.phone,
+                `Hello ${enquiry.name}, ${business.name} has replied to your enquiry on Engitech Expo. Check your dashboard for details.`
+            );
         }
 
         res.json({ success: true, msg: 'Reply sent', enquiry });

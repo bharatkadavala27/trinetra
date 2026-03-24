@@ -152,7 +152,7 @@ const companySchema = new mongoose.Schema({
     },
     verificationStatus: {
         type: String,
-        enum: ['Verified', 'Not Verified', 'Pending Review'],
+        enum: ['Verified', 'Not Verified', 'Pending Review', 'Flagged'],
         default: 'Not Verified'
     },
     image: {
@@ -160,6 +160,10 @@ const companySchema = new mongoose.Schema({
         default: null
     },
     isClaimPending: {
+        type: Boolean,
+        default: false
+    },
+    claimed: {
         type: Boolean,
         default: false
     },

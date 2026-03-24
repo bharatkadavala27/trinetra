@@ -160,6 +160,21 @@ const userSchema = new mongoose.Schema({
     privacySettings: {
         profileVisible: { type: Boolean, default: true },
         activityVisible: { type: Boolean, default: true }
+    },
+    // Device Push Token
+    fcmToken: {
+        type: String,
+        default: null
+    },
+    googleId: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+    facebookId: {
+        type: String,
+        unique: true,
+        sparse: true
     }
 }, { timestamps: true });
 

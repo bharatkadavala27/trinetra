@@ -2,6 +2,7 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const axios = require('axios');
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -357,10 +358,98 @@ exports.googleLogin = async (req, res) => {
             user = await User.create({
                 name,
                 email,
+                googleId: sub,
                 profilePhoto: picture,
                 isEmailVerified: true,
                 status: 'Active',
                 password: crypto.randomBytes(16).toString('hex'), // Random password for OAuth users
+                loginHistory: [{
+                    device: req.headers['user-agent'],
+                    ip: req.ip,
+                    timestamp: new Date()
+                }]
+            });
+        }
+
+        // Ensure googleId is set if it was a pre-existing email-only account
+        if (!user.googleId) {
+            user.googleId = sub;
+            await user.save();
+        }
+
+        const token = generateToken(user._id, user.role, user.name, user.email, user.tokenVersion);
+
+        res.json({
+            success: true,
+            token,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                profilePhoto: user.profilePhoto
+            }
+        });
+    } catch (err) {
+        console.error('Google Auth Error:', err.message);
+        res.status(401).json({ success: false, msg: 'Google Authentication failed' });
+    }
+};
+
+// @desc    Facebook OAuth Login
+// @route   POST /api/auth/facebook
+// @access  Public
+exports.facebookLogin = async (req, res) => {
+    try {
+        const { accessToken, userId } = req.body;
+
+        if (!accessToken || !userId) {
+            return res.status(400).json({ success: false, msg: 'Facebook Access Token and User ID are required' });
+        }
+
+        // Verify with Facebook Graph API
+        const fbRes = await axios.get(`https://graph.facebook.com/me?fields=name,email,picture&access_token=${accessToken}`);
+        const { name, email, picture, id } = fbRes.data;
+
+        if (id !== userId) {
+            return res.status(401).json({ success: false, msg: 'Facebook verification mismatch' });
+        }
+
+        // Check if user exists
+        let user = await User.findOne({ 
+            $or: [
+                { facebookId: id },
+                { email: email }
+            ]
+        });
+
+        if (user) {
+            if (user.status === 'Suspended' || user.status === 'Banned') {
+                return res.status(403).json({ success: false, msg: `Account ${user.status.toLowerCase()}. Contact support.` });
+            }
+            
+            // Link facebookId if not present
+            if (!user.facebookId) user.facebookId = id;
+            if (!user.profilePhoto && picture?.data?.url) user.profilePhoto = picture.data.url;
+            
+            user.loginHistory.push({
+                device: req.headers['user-agent'],
+                ip: req.ip,
+                timestamp: new Date()
+            });
+            if (user.loginHistory.length > 10) user.loginHistory.shift();
+            
+            await user.save();
+        } else {
+            // Create user
+            user = await User.create({
+                name,
+                email,
+                facebookId: id,
+                profilePhoto: picture?.data?.url,
+                isEmailVerified: true,
+                status: 'Active',
+                password: crypto.randomBytes(16).toString('hex'),
                 loginHistory: [{
                     device: req.headers['user-agent'],
                     ip: req.ip,
@@ -383,7 +472,7 @@ exports.googleLogin = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Google Auth Error:', err.message);
-        res.status(401).json({ success: false, msg: 'Google Authentication failed' });
+        console.error('Facebook Auth Error:', err.response?.data || err.message);
+        res.status(401).json({ success: false, msg: 'Facebook Authentication failed' });
     }
 };
