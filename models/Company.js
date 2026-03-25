@@ -159,6 +159,24 @@ const companySchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    images: [
+        {
+            url: { type: String, required: true },
+            isCover: { type: Boolean, default: false },
+            order: { type: Number, default: 0 },
+            status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' }
+        }
+    ],
+    videos: [
+        {
+            url: { type: String, required: true },
+            platform: { type: String, enum: ['YouTube', 'Vimeo'], default: 'YouTube' }
+        }
+    ],
+    logo: {
+        type: String,
+        default: null
+    },
     isClaimPending: {
         type: Boolean,
         default: false
@@ -213,6 +231,68 @@ const companySchema = new mongoose.Schema({
         3: { type: Number, default: 0 },
         4: { type: Number, default: 0 },
         5: { type: Number, default: 0 }
+    },
+    // Merchant Onboarding & Compliance
+    gstPan: {
+        type: String,
+        trim: true,
+        default: null
+    },
+    subCategory: {
+        type: String,
+        trim: true,
+        default: null
+    },
+    onboardingComplete: {
+        type: Boolean,
+        default: false
+    },
+    onboardingStep: {
+        type: Number,
+        default: 1
+    },
+    // Business Profile Details
+    tagline: {
+        type: String,
+        trim: true,
+        maxLength: 100
+    },
+    socialLinks: {
+        facebook: { type: String, trim: true },
+        instagram: { type: String, trim: true },
+        twitter: { type: String, trim: true },
+        linkedin: { type: String, trim: true },
+        youtube: { type: String, trim: true }
+    },
+    bookingUrl: {
+        type: String,
+        trim: true
+    },
+    yearEstablished: {
+        type: Number,
+        min: 1900,
+        max: new Date().getFullYear() + 1
+    },
+    employeeCount: {
+        type: Number,
+        min: 0
+    },
+    languages: [String],
+    paymentMethods: [String],
+    serviceRadius: {
+        type: Number,
+        default: 0 // in km
+    },
+    serviceArea: {
+        type: {
+            type: String,
+            enum: ['Polygon'],
+            default: 'Polygon'
+        },
+        coordinates: {
+            type: [[[Number]]], // Array of arrays of [longitude, latitude]
+            default: []
+        }
     },
     changeHistory: [
         {

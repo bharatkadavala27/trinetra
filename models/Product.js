@@ -24,6 +24,7 @@ const productSchema = new mongoose.Schema({
     sku: { type: String, required: true, unique: true },
     price: { type: Number, required: true, min: 0 },
     discountPrice: { type: Number, min: 0 },
+    displayOrder: { type: Number, default: 0 },
     taxClass: { type: String },
     
     stock: { type: Number, required: true, default: 0, min: 0 },

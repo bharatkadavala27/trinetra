@@ -9,13 +9,22 @@ const {
     getLatestReviews, 
     getUserReviews,
     voteReview,
-    reportReview
+    reportReview,
+    replyToReview,
+    flagReviewMerchant,
+    getMerchantReviewStats,
+    getMerchantReviews
 } = require('../controllers/reviewController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
+// Merchant & Public Routes
 router.get('/latest', getLatestReviews);
+router.get('/merchant/stats', protect, getMerchantReviewStats);
+router.get('/merchant/all', protect, getMerchantReviews);
 router.get('/:businessId', getBusinessReviews);
 router.get('/user/:userId', protect, getUserReviews);
+router.put('/:id/reply', protect, replyToReview);
+router.post('/:id/flag', protect, flagReviewMerchant);
 router.post('/', protect, addReview);
 router.post('/:id/vote', protect, voteReview);
 router.post('/:id/report', protect, reportReview);

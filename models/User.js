@@ -44,6 +44,16 @@ const userSchema = new mongoose.Schema({
         enum: ['Active', 'Suspended', 'Banned', 'Unverified'],
         default: 'Active'
     },
+    parentAccount: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
+    company: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company',
+        default: null
+    },
     banReason: String,
     banExpires: Date,
     banDuration: {
@@ -155,6 +165,20 @@ const userSchema = new mongoose.Schema({
             default: 'Weekly' 
         },
         lastDigestSent: { type: Date, default: null }
+    },
+    // Onboarding progress
+    onboardingStatus: {
+        isComplete: { type: Boolean, default: false },
+        step: { type: Number, default: 1 },
+        percentage: { type: Number, default: 0 },
+        checklist: {
+            basicInfo: { type: Boolean, default: false },
+            locationSet: { type: Boolean, default: false },
+            contactDetails: { type: Boolean, default: false },
+            businessHours: { type: Boolean, default: false },
+            mediaUploaded: { type: Boolean, default: false },
+            verificationPending: { type: Boolean, default: true }
+        }
     },
     // Privacy Settings
     privacySettings: {

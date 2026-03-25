@@ -17,7 +17,7 @@ const getAllCompanies = async (req, res) => {
         const { 
             q, category, categoryId, city, area, isFeatured, featured,
             page = 1, limit = 20, sort = 'rank', 
-            rating, priceRange, openNow, lat, lng 
+            rating, priceRange, openNow, lat, lng, owned
         } = req.query;
         
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -26,8 +26,15 @@ const getAllCompanies = async (req, res) => {
         let matchQuery = {};
         
         // 0. Enforce Approved status for public listings
-        if (!req.user || (req.user.role !== 'Admin' && req.user.role !== 'Developer')) {
+        const isInternal = req.user && (req.user.role === 'Admin' || req.user.role === 'Developer');
+        const isRequestingOwn = owned === 'true' && req.user;
+
+        if (!isInternal && !isRequestingOwn) {
             matchQuery.status = 'Approved';
+        }
+
+        if (isRequestingOwn) {
+            matchQuery.owner = new mongoose.Types.ObjectId(req.user._id);
         }
 
         const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -145,10 +152,17 @@ const getAllCompanies = async (req, res) => {
 const createCompany = async (req, res) => {
     try {
         const body = { ...req.body };
-        // Sanitize fields - convert empty strings to null to avoid CastError
-        ['country_id', 'state_id', 'city_id', 'area_id', 'owner', 'latitude', 'longitude'].forEach(field => {
-            if (body[field] === '') body[field] = null;
+        ['country_id', 'state_id', 'city_id', 'area_id', 'category_id', 'owner', 'latitude', 'longitude', 'gstPan', 'subCategory', 'manualCountry', 'manualState', 'manualCity', 'manualArea'].forEach(field => {
+            if (body[field] === '' || body[field] === 'manual') body[field] = null;
         });
+
+        // Convert latitude/longitude to GeoJSON if provided
+        if (body.latitude && body.longitude) {
+            body.location = {
+                type: 'Point',
+                coordinates: [parseFloat(body.longitude), parseFloat(body.latitude)]
+            };
+        }
 
         // Handle cascading manual location entry (Country -> State -> City -> Area)
         try {
@@ -276,8 +290,14 @@ const createCompany = async (req, res) => {
 
         res.status(201).json(populatedCompany);
     } catch (err) {
-        console.error('Create Company Error:', err.message);
-        res.status(500).json({ msg: 'Server Error', error: err.message });
+        console.error('Create Company Error:', err);
+        res.status(500).json({ 
+            msg: err.name === 'ValidationError' 
+                ? Object.values(err.errors).map(e => e.message).join(', ') 
+                : (err.code === 11000 ? `Duplicate value for ${Object.keys(err.keyValue).join(', ')}` : err.message || 'Server Error'), 
+            error: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 };
 
@@ -296,9 +316,17 @@ const updateCompany = async (req, res) => {
 
         const body = { ...req.body };
         // Sanitize fields
-        ['country_id', 'state_id', 'city_id', 'area_id', 'owner', 'latitude', 'longitude'].forEach(field => {
-            if (body[field] === '') body[field] = null;
+        ['country_id', 'state_id', 'city_id', 'area_id', 'category_id', 'owner', 'latitude', 'longitude', 'gstPan', 'subCategory', 'manualCountry', 'manualState', 'manualCity', 'manualArea'].forEach(field => {
+            if (body[field] === '' || body[field] === 'manual') body[field] = null;
         });
+
+        // Convert latitude/longitude to GeoJSON if provided
+        if (body.latitude && body.longitude) {
+            body.location = {
+                type: 'Point',
+                coordinates: [parseFloat(body.longitude), parseFloat(body.latitude)]
+            };
+        }
 
         // For Brand Owner, don't allow changing the owner
         if (req.user.role === 'Brand Owner') {
@@ -306,7 +334,7 @@ const updateCompany = async (req, res) => {
         }
 
         // Audit Trail Logic
-        const trackFields = ['name', 'status', 'verified', 'verificationStatus', 'owner', 'manualRank'];
+        const trackFields = ['name', 'status', 'verified', 'verificationStatus', 'owner', 'manualRank', 'category_id', 'gstPan', 'tagline', 'serviceRadius', 'logo', 'images', 'videos'];
         const changes = [];
         trackFields.forEach(field => {
             if (body[field] !== undefined && String(body[field]) !== String(company[field])) {

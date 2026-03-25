@@ -25,7 +25,7 @@ exports.getServices = async (req, res) => {
         let dbQuery = Service.find(query)
             .populate('listingId', 'name slug')
             .populate('categoryId', 'name')
-            .sort({ createdAt: -1 });
+            .sort({ displayOrder: 1, createdAt: -1 });
 
         if (limit) {
             dbQuery = dbQuery.limit(parseInt(limit));
@@ -38,6 +38,26 @@ exports.getServices = async (req, res) => {
             count: services.length,
             data: services
         });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Bulk reorder services
+exports.reorderServices = async (req, res) => {
+    try {
+        const { orders } = req.body; // Array of { id, displayOrder }
+        
+        const bulkOps = orders.map(item => ({
+            updateOne: {
+                filter: { _id: item.id },
+                update: { displayOrder: item.displayOrder }
+            }
+        }));
+
+        await Service.bulkWrite(bulkOps);
+
+        res.status(200).json({ success: true, msg: 'Reordered successfully' });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

@@ -27,6 +27,14 @@ const advertisementSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // Targeting
+    targetLocations: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Location' // or City/Area depending on your system
+    }],
+    targetCategories: [{
+        type: String
+    }],
     // Schedule
     schedule: {
         startDate: { type: Date, required: true },

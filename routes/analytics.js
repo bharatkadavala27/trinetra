@@ -6,6 +6,8 @@ const {
     getSearchAnalytics,
     getBusinessPerformance,
     getBusinessAnalytics,
+    getBusinessAnalyticsDetailed,
+    getMerchantAnalyticsOverview,
     getRevenueAnalytics,
     getUserBehaviorAnalytics,
     exportAnalytics,
@@ -24,6 +26,8 @@ router.get('/search', protect, getSearchAnalytics);
 
 // ==================== BUSINESS PERFORMANCE ====================
 router.get('/businesses/performance', protect, getBusinessPerformance);
+router.get('/merchant/overview', protect, getMerchantAnalyticsOverview);
+router.get('/merchant/business/:businessId', protect, getBusinessAnalyticsDetailed);
 router.get('/business/:businessId/:startDate?/:endDate?', protect, getBusinessAnalytics);
 
 // ==================== REVENUE ANALYTICS ====================

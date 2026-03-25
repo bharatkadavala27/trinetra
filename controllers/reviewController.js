@@ -390,3 +390,145 @@ exports.getUserReviews = async (req, res) => {
         res.status(500).json({ msg: 'Server Error' });
     }
 };
+
+// @desc    Merchant Reply to a review
+// @route   PUT /api/reviews/:id/reply
+// @access  Private (Merchant)
+exports.replyToReview = async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ msg: 'Reply text is required' });
+
+        const review = await Review.findById(req.params.id).populate('businessId');
+        if (!review) return res.status(404).json({ msg: 'Review not found' });
+
+        // Verify Ownership
+        if (review.businessId.owner.toString() !== req.user.id) {
+            return res.status(403).json({ msg: 'Not authorized to reply to this review' });
+        }
+
+        review.ownerReply = {
+            text,
+            repliedBy: req.user.id,
+            date: new Date()
+        };
+
+        await review.save();
+
+        // Notify Reviewer
+        await sendNotification({
+            recipientId: review.userId,
+            senderId: req.user.id,
+            type: 'SYSTEM',
+            title: 'New Reply to Your Review',
+            message: `The owner of ${review.businessId.name} has responded to your feedback.`,
+            link: `/profile/reviews`,
+            metadata: { reviewId: review._id }
+        });
+
+        res.json(review);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Merchant Flag/Escalate a review
+// @route   POST /api/reviews/:id/flag
+// @access  Private (Merchant)
+exports.flagReviewMerchant = async (req, res) => {
+    try {
+        const { reason, description } = req.body;
+        const review = await Review.findById(req.params.id).populate('businessId');
+        if (!review) return res.status(404).json({ msg: 'Review not found' });
+
+        // Verify Ownership (Merchants can only flag reviews for their own business)
+        if (review.businessId.owner.toString() !== req.user.id) {
+            return res.status(403).json({ msg: 'Not authorized to flag this review' });
+        }
+
+        review.flags.push({
+            flaggedBy: req.user.id,
+            reason: reason || 'Fake',
+            description,
+            flaggedAt: new Date()
+        });
+
+        await review.save();
+        res.json({ msg: 'Review flagged for admin review' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Get aggregate review stats for merchant's businesses
+// @route   GET /api/reviews/merchant/stats
+// @access  Private (Merchant)
+exports.getMerchantReviewStats = async (req, res) => {
+    try {
+        // Find all businesses owned by this merchant
+        const companies = await Company.find({ owner: req.user.id }).select('_id');
+        const companyIds = companies.map(c => c._id);
+
+        if (companyIds.length === 0) {
+            return res.json({
+                averageRating: 0,
+                totalReviews: 0,
+                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                responseRate: 0
+            });
+        }
+
+        const reviews = await Review.find({ 
+            businessId: { $in: companyIds },
+            isDeleted: { $ne: true }
+        });
+
+        const totalReviews = reviews.length;
+        const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        let sumRating = 0;
+        let repliedCount = 0;
+
+        reviews.forEach(r => {
+            const star = Math.round(r.rating);
+            if (ratingDistribution[star] !== undefined) ratingDistribution[star]++;
+            sumRating += r.rating;
+            if (r.ownerReply && r.ownerReply.text) repliedCount++;
+        });
+
+        res.json({
+            averageRating: totalReviews > 0 ? parseFloat((sumRating / totalReviews).toFixed(1)) : 0,
+            totalReviews,
+            ratingDistribution,
+            responseRate: totalReviews > 0 ? Math.round((repliedCount / totalReviews) * 100) : 0,
+            repliedCount
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};
+
+// @desc    Get all reviews for merchant's businesses
+// @route   GET /api/reviews/merchant/all
+// @access  Private (Merchant)
+exports.getMerchantReviews = async (req, res) => {
+    try {
+        const companies = await Company.find({ owner: req.user.id }).select('_id');
+        const companyIds = companies.map(c => c._id);
+
+        const reviews = await Review.find({ 
+            businessId: { $in: companyIds },
+            isDeleted: { $ne: true }
+        })
+        .populate('userId', 'name email image')
+        .populate('businessId', 'name slug')
+        .sort({ createdAt: -1 });
+
+        res.json(reviews);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+};

@@ -82,6 +82,7 @@ app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/plans', require('./routes/plans'));
 app.use('/api/coupons', require('./routes/coupons'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
+app.use('/api/offers', require('./routes/offers'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/tickets', require('./routes/tickets'));
 app.use('/api/admin', require('./routes/admin'));
@@ -91,6 +92,7 @@ app.use('/api/cms', require('./routes/cms'));
 app.use('/api/merchant', require('./routes/merchant'));
 app.use('/api/revenue',  require('./routes/revenue'));
 app.use('/api/ads',      require('./routes/ads'));
+app.use('/api/merchant-ads', require('./routes/merchantAds'));
 app.use('/api/reports',  require('./routes/reports'));
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/fuerte_db';

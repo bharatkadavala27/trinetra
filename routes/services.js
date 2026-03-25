@@ -5,7 +5,8 @@ const {
     getService,
     createService,
     updateService,
-    deleteService
+    deleteService,
+    reorderServices
 } = require('../controllers/serviceController');
 
 const { protect, authorize, attachOwnedBrands } = require('../middleware/authMiddleware');
@@ -20,6 +21,7 @@ router.use(authorize('Super Admin', 'Brand Owner', 'Company Owner'));
 router.use(attachOwnedBrands);
 
 router.route('/').post(createService);
+router.patch('/reorder', reorderServices);
 router.route('/:id')
     .put(updateService)
     .delete(deleteService);

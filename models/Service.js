@@ -16,8 +16,12 @@ const serviceSchema = new mongoose.Schema({
     
     priceType: { type: String, enum: ['fixed', 'hourly', 'range'], required: true, default: 'fixed' },
     price: { type: Number },
+    minPrice: { type: Number }, // Support for price range
+    maxPrice: { type: Number }, // Support for price range
     hourlyRate: { type: Number },
     discountPrice: { type: Number },
+    
+    displayOrder: { type: Number, default: 0 }, // For drag-and-drop reordering
     
     // Booking Settings
     duration: { type: Number }, // in minutes

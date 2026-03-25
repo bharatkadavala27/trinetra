@@ -796,14 +796,212 @@ const logEvent = async (req, res) => {
     }
 };
 
+// @desc    Get aggregate analytics for all businesses owned by a merchant
+// @route   GET /api/analytics/merchant/overview
+// @access  Private (Merchant)
+const getMerchantAnalyticsOverview = async (req, res) => {
+    try {
+        const companies = await Company.find({ owner: req.user.id }).select('_id');
+        const companyIds = companies.map(c => c._id);
+
+        if (companyIds.length === 0) {
+            return res.json({
+                success: true,
+                kpis: { views: 0, calls: 0, enquiries: 0, whatsapp: 0 },
+                trends: []
+            });
+        }
+
+        const stats = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    businessId: { $in: companyIds },
+                    timestamp: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    views: { $sum: { $cond: [{ $eq: ['$eventType', 'business_listing_view'] }, 1, 0] } },
+                    calls: { $sum: { $cond: [{ $eq: ['$eventType', 'call_click'] }, 1, 0] } },
+                    enquiries: { $sum: { $cond: [{ $eq: ['$eventType', 'enquiry_submit'] }, 1, 0] } },
+                    whatsapp: { $sum: { $cond: [{ $eq: ['$eventType', 'contact_click'] }, 1, 0] } }
+                }
+            }
+        ]);
+
+        const dailyTrends = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    businessId: { $in: companyIds },
+                    timestamp: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+                    views: { $sum: { $cond: [{ $eq: ['$eventType', 'business_listing_view'] }, 1, 0] } },
+                    conversions: { $sum: { $cond: [{ $in: ['$eventType', ['call_click', 'enquiry_submit', 'contact_click']] }, 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        res.json({
+            success: true,
+            kpis: stats[0] || { views: 0, calls: 0, enquiries: 0, whatsapp: 0 },
+            trends: dailyTrends
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
+};
+
+// @desc    Get detailed business analytics for merchant dashboard
+// @route   GET /api/analytics/merchant/business/:businessId
+// @access  Private (Merchant)
+const getBusinessAnalyticsDetailed = async (req, res) => {
+    try {
+        const { businessId } = req.params;
+        const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        
+        const business = await Company.findById(businessId);
+        if (!business) return res.status(404).json({ success: false, msg: 'Business not found' });
+
+        // Ensure ownership
+        if (business.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, msg: 'Not authorized' });
+        }
+
+        // 1. Device Breakdown
+        const deviceData = await AnalyticsEvent.aggregate([
+            { $match: { businessId: mongoose.Types.ObjectId(businessId), timestamp: { $gte: start } } },
+            { $group: { _id: '$deviceInfo.deviceType', count: { $sum: 1 } } }
+        ]);
+
+        // 2. Rating Trend (Average rating over time)
+        const ratingTrend = await Review.aggregate([
+            { $match: { businessId: mongoose.Types.ObjectId(businessId), isDeleted: { $ne: true } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+                    avgRating: { $avg: '$rating' },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // 3. Search Keywords
+        const keywordStats = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    businessId: mongoose.Types.ObjectId(businessId),
+                    eventType: 'business_listing_view',
+                    timestamp: { $gte: start }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'analyticsevents',
+                    let: { sessId: '$sessionId', viewTime: '$timestamp' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$sessionId', '$$sessId'] },
+                                        { $eq: ['$eventType', 'search'] },
+                                        { $lt: ['$timestamp', '$$viewTime'] }
+                                    ]
+                                }
+                            }
+                        },
+                        { $sort: { timestamp: -1 } },
+                        { $limit: 1 }
+                    ],
+                    as: 'referringSearch'
+                }
+            },
+            { $unwind: '$referringSearch' },
+            { $group: { _id: '$referringSearch.searchQuery', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+        ]);
+
+        // 4. Competitor Benchmarking
+        const competitorAvg = await AnalyticsEvent.aggregate([
+            {
+                $lookup: {
+                    from: 'companies',
+                    localField: 'businessId',
+                    foreignField: '_id',
+                    as: 'comp'
+                }
+            },
+            { $unwind: '$comp' },
+            { 
+                $match: { 
+                    'comp.category': business.category,
+                    'comp.city': business.city,
+                    timestamp: { $gte: start }
+                } 
+            },
+            {
+                $group: {
+                    _id: '$businessId',
+                    views: { $sum: { $cond: [{ $eq: ['$eventType', 'business_listing_view'] }, 1, 0] } },
+                    conversions: { $sum: { $cond: [{ $in: ['$eventType', ['call_click', 'enquiry_submit', 'contact_click', 'whatsapp']] }, 1, 0] } }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    avgViews: { $avg: '$views' },
+                    avgConversions: { $avg: '$conversions' }
+                }
+            }
+        ]);
+
+        // 5. Daily Trends
+        const trends = await AnalyticsEvent.aggregate([
+            { $match: { businessId: mongoose.Types.ObjectId(businessId), timestamp: { $gte: start } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+                    views: { $sum: { $cond: [{ $eq: ['$eventType', 'business_listing_view'] }, 1, 0] } },
+                    conversions: { $sum: { $cond: [{ $in: ['$eventType', ['call_click', 'enquiry_submit', 'contact_click', 'whatsapp']] }, 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        res.json({
+            success: true,
+            business: { name: business.name },
+            deviceBreakdown: deviceData,
+            ratingTrend,
+            topKeywords: keywordStats,
+            marketBenchmark: competitorAvg[0] || { avgViews: 0, avgConversions: 0 },
+            trends
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, msg: 'Server Error' });
+    }
+};
+
 module.exports = {
     getDashboardKPIs,
     getTrafficAnalytics,
     getSearchAnalytics,
     getBusinessPerformance,
     getBusinessAnalytics,
+    getBusinessAnalyticsDetailed,
+    getMerchantAnalyticsOverview,
     getRevenueAnalytics,
     getUserBehaviorAnalytics,
     exportAnalytics,
-    logEvent // Legacy function for backward compatibility
+    logEvent
 };
